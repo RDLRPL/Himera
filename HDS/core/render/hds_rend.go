@@ -1,113 +1,87 @@
 package render
 
 import (
-	"bytes"
-	"fmt"
-	"html/template"
-	"io"
-	"net/http"
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
-// Engine - основной тип движка рендеринга
 type Engine struct {
-	templates map[string]*template.Template
-	funcMap   template.FuncMap
-	debug     bool
+	templates map[string]string
+	funcMap   map[string]func(string) string
 	dir       string
 	mu        sync.Mutex
 }
 
-// New создает новый экземпляр движка
-func New(dir string, debug bool) *Engine {
+func New(dir string) *Engine {
 	return &Engine{
-		templates: make(map[string]*template.Template),
-		funcMap:   make(template.FuncMap),
-		debug:     debug,
+		templates: make(map[string]string),
+		funcMap:   make(map[string]func(string) string),
 		dir:       dir,
 	}
 }
 
-// LoadTemplates загружает все шаблоны из указанной директории
 func (e *Engine) LoadTemplates() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.debug {
-		e.templates = make(map[string]*template.Template)
-	}
-
-	// Получаем все файлы шаблонов
-	files, err := filepath.Glob(filepath.Join(e.dir, "*.html"))
-	if err != nil {
-		return err
-	}
-
-	if len(files) == 0 {
-		return fmt.Errorf("no templates found in %s", e.dir)
-	}
-
-	// Парсим все шаблоны
-	for _, file := range files {
-		name := filepath.Base(file)
-
-		// Копируем карту функций для каждого шаблона
-		funcMap := make(template.FuncMap)
-		for k, v := range e.funcMap {
-			funcMap[k] = v
-		}
-
-		tmpl := template.New(name).Funcs(funcMap)
-
-		tmpl, err = tmpl.ParseFiles(file)
+	return filepath.Walk(e.dir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
-			return fmt.Errorf("error parsing template %s: %v", file, err)
+			return err
 		}
 
-		e.templates[name] = tmpl
-	}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".html") {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
 
-	return nil
+			e.templates[info.Name()] = string(content)
+		}
+
+		return nil
+	})
 }
 
-// AddFunc добавляет функцию в шаблоны
-func (e *Engine) AddFunc(name string, fn interface{}) {
+func (e *Engine) AddFunc(name string, fn func(string) string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.funcMap[name] = fn
 }
 
-// Render выполняет рендеринг шаблона
-func (e *Engine) Render(w io.Writer, name string, data interface{}) error {
+func (e *Engine) Render(name string, data map[string]interface{}) (string, error) {
 	e.mu.Lock()
-	tmpl, ok := e.templates[name]
+	content, ok := e.templates[name]
 	e.mu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("template %s not found", name)
+		return "", ErrTemplateNotFound
 	}
 
-	// В режиме отладки перезагружаем шаблоны перед каждым рендером
-	if e.debug {
-		if err := e.LoadTemplates(); err != nil {
-			return err
+	for k, v := range data {
+		placeholder := "{{." + k + "}}"
+		content = strings.ReplaceAll(content, placeholder, v.(string))
+	}
+
+	for name, fn := range e.funcMap {
+		placeholder := "{{" + name + " ."
+		if strings.Contains(content, placeholder) {
+			start := strings.Index(content, placeholder)
+			if start != -1 {
+				end := strings.Index(content[start:], "}}") + start
+				if end != -1 {
+					expr := content[start+len(placeholder) : end]
+					result := fn(expr)
+					content = content[:start] + result + content[end+2:]
+				}
+			}
 		}
-		e.mu.Lock()
-		tmpl = e.templates[name]
-		e.mu.Unlock()
 	}
 
-	return tmpl.Execute(w, data)
+	return content, nil
 }
 
-// RenderHTTP рендерит шаблон в http.ResponseWriter
-func (e *Engine) RenderHTTP(w http.ResponseWriter, name string, data interface{}) {
-	buf := new(bytes.Buffer)
-	if err := e.Render(buf, name, data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(buf.Bytes())
-}
+var ErrTemplateNotFound = errors.New("template not found")
