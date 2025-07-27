@@ -1,67 +1,40 @@
-package render
+package main
 
 import (
-	"html/template"
+	"net/http"
 	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/RDLRPL/Himera/HDS/core/render"
 )
 
-// Engine - основной тип движка рендеринга
-type Engine struct {
-	templates map[string]*template.Template
-	funcMap   template.FuncMap
-	debug     bool
-	dir       string
-}
+func main() {
+	// Получаем путь к директории с шаблонами
+	_, filename, _, _ := runtime.Caller(0)
+	dir := filepath.Join(filepath.Dir(filename), "templates")
 
-// New создает новый экземпляр движка
-func New(dir string, debug bool) *Engine {
-	return &Engine{
-		templates: make(map[string]*template.Template),
-		funcMap:   make(template.FuncMap),
-		debug:     debug,
-		dir:       dir,
-	}
-}
+	// Создаем движок
+	engine := render.New(dir, true) // true - режим отладки
 
-func (e *Engine) LoadTemplates() error {
-	if e.debug {
-		e.templates = make(map[string]*template.Template)
+	// Добавляем пользовательские функции
+	engine.AddFunc("uppercase", func(s string) string {
+		return strings.ToUpper(s)
+	})
+
+	// Загружаем шаблоны
+	if err := engine.LoadTemplates(); err != nil {
+		panic(err)
 	}
 
-	layouts, err := filepath.Glob(filepath.Join(e.dir, "layouts/*.html"))
-	if err != nil {
-		return err
-	}
-
-	pages, err := filepath.Glob(filepath.Join(e.dir, "pages/*.html"))
-	if err != nil {
-		return err
-	}
-
-	for _, page := range pages {
-		name := filepath.Base(page)
-
-		// Копируем карту функций для каждого шаблона
-		funcMap := make(template.FuncMap)
-		for k, v := range e.funcMap {
-			funcMap[k] = v
+	// Роутинг
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		data := map[string]interface{}{
+			"Title":   "Главная страница",
+			"Message": "Привет, мир!",
 		}
+		engine.RenderHTTP(w, "index.html", data)
+	})
 
-		tmpl := template.New(name).Funcs(funcMap)
-
-		// Парсим страницу вместе с лейаутами
-		files := append(layouts, page)
-		tmpl, err = tmpl.ParseFiles(files...)
-		if err != nil {
-			return err
-		}
-
-		e.templates[name] = tmpl
-	}
-
-	return nil
-}
-
-func (e *Engine) AddFunc(name string, fn interface{}) {
-	e.funcMap[name] = fn
+	http.ListenAndServe(":8080", nil)
 }
