@@ -289,10 +289,5 @@ func extractText(node *html.Node) string {
 	walker(node)
 	result := strings.TrimSpace(sb.String())
 
-	// Ограничиваем очень длинный текст
-	if len(result) > 2000 {
-		result = result[:2000] + "..."
-	}
-
 	return result
 }
