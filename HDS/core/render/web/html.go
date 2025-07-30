@@ -14,6 +14,12 @@ type DrawHTML struct {
 	gtxDH     layout.Context
 	thDH      *material.Theme
 	htmlStrDH string
+
+	// Кэшированные данные для оптимизации
+	cachedDoc    *html.Node
+	cachedLayout []layout.FlexChild
+	bodyNode     *html.Node
+	parsed       bool
 }
 
 func NewDRW(gtx layout.Context, th *material.Theme, htmlStr string) *DrawHTML {
@@ -24,29 +30,86 @@ func NewDRW(gtx layout.Context, th *material.Theme, htmlStr string) *DrawHTML {
 	}
 }
 
+// Кэшированный парсинг HTML
+func (e *DrawHTML) ensureParsed() error {
+	if e.parsed {
+		return nil
+	}
+
+	if e.htmlStrDH == "" {
+		e.parsed = true
+		return nil
+	}
+
+	doc, err := html.Parse(strings.NewReader(e.htmlStrDH))
+	if err != nil {
+		return err
+	}
+
+	e.cachedDoc = doc
+	e.bodyNode = findBodyNode(doc)
+	e.parsed = true
+
+	// Предварительная подготовка структуры для рендеринга
+	e.prepareLayout()
+
+	return nil
+}
+
+// Предварительная подготовка layout структуры
+func (e *DrawHTML) prepareLayout() {
+	if e.bodyNode != nil {
+		e.cachedLayout = e.buildLayoutChildren(e.bodyNode)
+	} else if e.cachedDoc != nil {
+		e.cachedLayout = e.buildLayoutChildren(e.cachedDoc)
+	}
+}
+
+// Создает layout children один раз вместо создания на каждом рендере
+func (e *DrawHTML) buildLayoutChildren(node *html.Node) []layout.FlexChild {
+	var children []layout.FlexChild
+
+	for c := node.FirstChild; c != nil; c = c.NextSibling {
+		switch c.Type {
+		case html.ElementNode:
+			if !shouldSkipElement(c.Data) {
+				child := c // Захватываем переменную
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return e.renderElement(gtx, child)
+				}))
+			}
+		case html.TextNode:
+			text := cleanText(c.Data)
+			if text != "" && c.Parent != nil && !shouldSkipElement(c.Parent.Data) {
+				textCopy := text // Захватываем переменную
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return material.Body1(e.thDH, textCopy).Layout(gtx)
+				}))
+			}
+		}
+	}
+
+	return children
+}
+
 // Получаем базовый размер отступа (без сложных вычислений)
 func (e *DrawHTML) getInset(base float32) unit.Dp {
 	return unit.Dp(base)
 }
 
-func (e DrawHTML) RenderHTML() layout.Dimensions {
-	if e.htmlStrDH == "" {
-		return layout.Dimensions{}
-	}
-
-	doc, err := html.Parse(strings.NewReader(e.htmlStrDH))
-	if err != nil {
-		// Показываем ошибку парсинга
+func (e *DrawHTML) RenderHTML() layout.Dimensions {
+	if err := e.ensureParsed(); err != nil {
 		return material.Body1(e.thDH, "Ошибка парсинга HTML: "+err.Error()).Layout(e.gtxDH)
 	}
 
-	// Ищем body элемент для лучшего рендеринга
-	bodyNode := findBodyNode(doc)
-	if bodyNode != nil {
-		return e.layoutList(e.gtxDH, bodyNode)
+	if len(e.cachedLayout) == 0 {
+		return layout.Dimensions{}
 	}
 
-	return e.layoutList(e.gtxDH, doc)
+	return layout.Flex{
+		Axis:    layout.Vertical,
+		Spacing: layout.SpaceSides,
+	}.Layout(e.gtxDH, e.cachedLayout...)
 }
 
 // Находит body элемент в HTML документе
@@ -66,81 +129,64 @@ func findBodyNode(node *html.Node) *html.Node {
 
 // Проверяет, является ли элемент скрытым или служебным
 func shouldSkipElement(nodeName string) bool {
-	skipElements := map[string]bool{
-		"head":     true,
-		"title":    true,
-		"meta":     true,
-		"link":     true,
-		"script":   true,
-		"style":    true,
-		"noscript": true,
-		"comment":  true,
+	switch nodeName {
+	case "head", "title", "meta", "link", "script", "style", "noscript", "comment":
+		return true
+	default:
+		return false
 	}
-	return skipElements[nodeName]
 }
 
-// Очищает и нормализует текст
+// Оптимизированная очистка текста
 func cleanText(text string) string {
+	if text == "" {
+		return ""
+	}
+
+	// Быстрая проверка - если нет пробельных символов, возвращаем как есть
+	hasWhitespace := false
+	for _, r := range text {
+		if unicode.IsSpace(r) {
+			hasWhitespace = true
+			break
+		}
+	}
+
+	if !hasWhitespace {
+		return text
+	}
+
 	// Удаляем лишние пробелы и переносы строк
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}
 
-	// Заменяем множественные пробелы одним
-	var result strings.Builder
-	var prevSpace bool
+	// Заменяем множественные пробелы одним (оптимизированная версия)
+	result := make([]rune, 0, len(text))
+	prevSpace := false
 
 	for _, r := range text {
 		if unicode.IsSpace(r) {
 			if !prevSpace {
-				result.WriteRune(' ')
+				result = append(result, ' ')
 				prevSpace = true
 			}
 		} else {
-			result.WriteRune(r)
+			result = append(result, r)
 			prevSpace = false
 		}
 	}
 
-	return strings.TrimSpace(result.String())
+	return strings.TrimSpace(string(result))
 }
 
-func (e *DrawHTML) layoutList(gtx layout.Context, node *html.Node) layout.Dimensions {
-	var children []layout.FlexChild
-
-	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		switch c.Type {
-		case html.ElementNode:
-			if !shouldSkipElement(c.Data) {
-				child := c // Захватываем переменную для замыкания
-				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return e.renderElement(gtx, child)
-				}))
-			}
-		case html.TextNode:
-			text := cleanText(c.Data)
-			if text != "" && c.Parent != nil && !shouldSkipElement(c.Parent.Data) {
-				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return material.Body1(e.thDH, text).Layout(gtx)
-				}))
-			}
-		}
-	}
-
-	if len(children) == 0 {
-		return layout.Dimensions{}
-	}
-
-	return layout.Flex{
-		Axis:    layout.Vertical,
-		Spacing: layout.SpaceSides,
-	}.Layout(gtx, children...)
-}
+// Кэшированное извлечение текста из элементов
+var textCache = make(map[*html.Node]string)
 
 func (e *DrawHTML) renderElement(gtx layout.Context, node *html.Node) layout.Dimensions {
 	// Получаем текстовое содержимое элемента
-	content := extractText(node)
+	content := e.getCachedText(node)
 
 	switch strings.ToLower(node.Data) {
 	case "h1":
@@ -148,42 +194,42 @@ func (e *DrawHTML) renderElement(gtx layout.Context, node *html.Node) layout.Dim
 			h1 := material.H1(e.thDH, content)
 			return layout.Inset{Bottom: e.getInset(16)}.Layout(gtx, h1.Layout)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "h2":
 		if content != "" {
 			h2 := material.H2(e.thDH, content)
 			return layout.Inset{Bottom: e.getInset(12), Top: e.getInset(8)}.Layout(gtx, h2.Layout)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "h3":
 		if content != "" {
 			h3 := material.H3(e.thDH, content)
 			return layout.Inset{Bottom: e.getInset(8), Top: e.getInset(4)}.Layout(gtx, h3.Layout)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "h4":
 		if content != "" {
 			h4 := material.H4(e.thDH, content)
 			return layout.Inset{Bottom: e.getInset(6), Top: e.getInset(2)}.Layout(gtx, h4.Layout)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "h5":
 		if content != "" {
 			h5 := material.H5(e.thDH, content)
 			return layout.Inset{Bottom: e.getInset(4)}.Layout(gtx, h5.Layout)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "h6":
 		if content != "" {
 			h6 := material.H6(e.thDH, content)
 			return layout.Inset{Bottom: e.getInset(4)}.Layout(gtx, h6.Layout)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "p":
 		if content != "" {
@@ -191,31 +237,30 @@ func (e *DrawHTML) renderElement(gtx layout.Context, node *html.Node) layout.Dim
 			return layout.Inset{Bottom: e.getInset(12)}.Layout(gtx, body.Layout)
 		}
 		return layout.Inset{Bottom: e.getInset(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return e.layoutList(gtx, node)
+			return e.layoutListOptimized(gtx, node)
 		})
 
 	case "div":
 		return layout.Inset{Bottom: e.getInset(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return e.layoutList(gtx, node)
+			return e.layoutListOptimized(gtx, node)
 		})
 
 	case "span":
 		if content != "" {
 			return material.Body2(e.thDH, content).Layout(gtx)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "a":
 		if content != "" {
 			link := material.Body1(e.thDH, content)
-			// Можно добавить другой цвет для ссылок
 			return link.Layout(gtx)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	case "ul", "ol":
 		return layout.Inset{Bottom: e.getInset(8), Left: e.getInset(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return e.layoutList(gtx, node)
+			return e.layoutListOptimized(gtx, node)
 		})
 
 	case "li":
@@ -224,7 +269,7 @@ func (e *DrawHTML) renderElement(gtx layout.Context, node *html.Node) layout.Dim
 			return layout.Inset{Bottom: e.getInset(4)}.Layout(gtx, listItem.Layout)
 		}
 		return layout.Inset{Left: e.getInset(16), Bottom: e.getInset(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return e.layoutList(gtx, node)
+			return e.layoutListOptimized(gtx, node)
 		})
 
 	case "br":
@@ -243,7 +288,7 @@ func (e *DrawHTML) renderElement(gtx layout.Context, node *html.Node) layout.Dim
 				quote := material.Body2(e.thDH, content)
 				return quote.Layout(gtx)
 			}
-			return e.layoutList(gtx, node)
+			return e.layoutListOptimized(gtx, node)
 		})
 
 	case "pre", "code":
@@ -256,29 +301,53 @@ func (e *DrawHTML) renderElement(gtx layout.Context, node *html.Node) layout.Dim
 				Right:  e.getInset(12),
 			}.Layout(gtx, code.Layout)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 
 	default:
-		// Для неизвестных элементов просто рендерим их содержимое
-		if content != "" && len(content) < 1000 { // Ограничиваем длинный текст
+		if content != "" && len(content) < 1000 {
 			return material.Body1(e.thDH, content).Layout(gtx)
 		}
-		return e.layoutList(gtx, node)
+		return e.layoutListOptimized(gtx, node)
 	}
 }
 
-func extractText(node *html.Node) string {
-	var sb strings.Builder
-	var walker func(*html.Node)
+func (e *DrawHTML) getCachedText(node *html.Node) string {
+	if cached, exists := textCache[node]; exists {
+		return cached
+	}
 
+	result := extractTextOptimized(node)
+
+	if len(textCache) > 1000 {
+		textCache = make(map[*html.Node]string)
+	}
+
+	textCache[node] = result
+	return result
+}
+
+func (e *DrawHTML) layoutListOptimized(gtx layout.Context, node *html.Node) layout.Dimensions {
+	children := e.buildLayoutChildren(node)
+
+	if len(children) == 0 {
+		return layout.Dimensions{}
+	}
+
+	return layout.Flex{
+		Axis:    layout.Vertical,
+		Spacing: layout.SpaceSides,
+	}.Layout(gtx, children...)
+}
+
+func extractTextOptimized(node *html.Node) string {
+	var parts []string
+
+	var walker func(*html.Node)
 	walker = func(n *html.Node) {
 		if n.Type == html.TextNode {
 			text := cleanText(n.Data)
 			if text != "" {
-				if sb.Len() > 0 {
-					sb.WriteString(" ")
-				}
-				sb.WriteString(text)
+				parts = append(parts, text)
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -287,7 +356,14 @@ func extractText(node *html.Node) string {
 	}
 
 	walker(node)
-	result := strings.TrimSpace(sb.String())
 
-	return result
+	if len(parts) == 0 {
+		return ""
+	}
+
+	if len(parts) == 1 {
+		return parts[0]
+	}
+
+	return strings.Join(parts, " ")
 }
