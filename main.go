@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"runtime"
 	"strings"
 
 	h "github.com/RDLRPL/Himera/HDS/core/http"
-	"github.com/RDLRPL/Himera/HDS/core/utils"
 	"github.com/RDLRPL/Himera/HGD/Draw/TextLIB"
+	"github.com/RDLRPL/Himera/HGD/utils"
+	shaders "github.com/RDLRPL/Himera/HGD/utils/Shaders"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
@@ -24,30 +26,7 @@ var (
 	windowedWidth  = Monitor.Width
 	windowedHeight = Monitor.Height
 )
-
-var vertexShaderSource = `
-#version 410
-layout (location = 0) in vec4 vertex;
-out vec2 TexCoords;
-uniform mat4 projection;
-
-void main() {
-    gl_Position = projection * vec4(vertex.xy, 0.0, 1.0);
-    TexCoords = vertex.zw;
-}
-` + "\x00"
-
-var fragmentShaderSource = `
-#version 410
-in vec2 TexCoords;
-out vec4 color;
-uniform sampler2D text;
-uniform vec3 textColor;
-void main() {
-    vec4 sampled = vec4(1.0, 1.0, 1.0, texture(text, TexCoords).r);
-    color = vec4(textColor, 1.0) * sampled;
-}
-` + "\x00"
+var TextShaders = shaders.ReadShaders(filepath.Join(utils.GetExecPath(), "HGD/shaders/text"), "VertexText.glsl", "FragText.frag")
 
 func init() {
 	runtime.LockOSThread()
@@ -74,12 +53,12 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 }
 
 func createShaderProgram() (uint32, error) {
-	vertexShader, err := compileShader(vertexShaderSource, gl.VERTEX_SHADER)
+	vertexShader, err := compileShader(TextShaders.Vertex, gl.VERTEX_SHADER)
 	if err != nil {
 		return 0, fmt.Errorf("failed to compile vertex shader: %v", err)
 	}
 
-	fragmentShader, err := compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER)
+	fragmentShader, err := compileShader(TextShaders.Frag, gl.FRAGMENT_SHADER)
 	if err != nil {
 		return 0, fmt.Errorf("failed to compile fragment shader: %v", err)
 	}
@@ -266,7 +245,7 @@ func main() {
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 
 		effectiveScale := zoom * 1.0
-		renderMultilineText(program, req.Page, 50*zoom, 50*zoom, effectiveScale, [3]float32{0.9, 0.6, 0.1}, 1.2)
+		renderMultilineText(program, req.Page, 50*zoom, 50*zoom, effectiveScale, utils.RGBToFloat32(255, 255, 255), 1.2)
 
 		zoomInfo := fmt.Sprintf("Zoom: %.1fx", zoom)
 		TextLIB.DrawText(program, zoomInfo, float32(currentWidth)-200*zoom, 30*zoom, zoom, utils.RGBToFloat32(255, 255, 255))
