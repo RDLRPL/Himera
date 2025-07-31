@@ -1,237 +1,277 @@
 package main
 
 import (
-	"image"
-	"os"
-	"sync"
-	"time"
+	"fmt"
+	"log"
+	"runtime"
+	"strings"
 
-	"gioui.org/app"
-	"gioui.org/font/gofont"
-	"gioui.org/io/key"
-	"gioui.org/layout"
-	"gioui.org/op"
-	"gioui.org/text"
-	"gioui.org/unit"
-	"gioui.org/widget"
-	"gioui.org/widget/material"
 	h "github.com/RDLRPL/Himera/HDS/core/http"
-	"github.com/RDLRPL/Himera/HDS/core/render/web"
+	"github.com/RDLRPL/Himera/HDS/core/utils"
+	"github.com/RDLRPL/Himera/HGD/Draw/TextLIB"
+
+	"github.com/go-gl/gl/v4.1-core/gl"
+	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
-type AppState struct {
-	htmlstr              string
-	dataLoaded           bool
-	loading              bool
-	cachedTheme          *material.Theme
-	mutex                sync.RWMutex
-	zoomFactor           float32
-	scrollList           widget.List
-	LCanvasWidthPercent  float32
-	RCanvasWidthPercent  float32
-	UCanvasHeightPercent float32
-	DCanvasHeightPercent float32
+var Monitor, _ = utils.GetPrimaryMonitor()
+
+var (
+	currentWidth   = Monitor.Width
+	currentHeight  = Monitor.Height
+	zoom           = float32(1.0)
+	isFullscreen   = false
+	windowedWidth  = Monitor.Width
+	windowedHeight = Monitor.Height
+)
+
+var vertexShaderSource = `
+#version 410
+layout (location = 0) in vec4 vertex;
+out vec2 TexCoords;
+uniform mat4 projection;
+
+void main() {
+    gl_Position = projection * vec4(vertex.xy, 0.0, 1.0);
+    TexCoords = vertex.zw;
+}
+` + "\x00"
+
+var fragmentShaderSource = `
+#version 410
+in vec2 TexCoords;
+out vec4 color;
+uniform sampler2D text;
+uniform vec3 textColor;
+void main() {
+    vec4 sampled = vec4(1.0, 1.0, 1.0, texture(text, TexCoords).r);
+    color = vec4(textColor, 1.0) * sampled;
+}
+` + "\x00"
+
+func init() {
+	runtime.LockOSThread()
 }
 
-func (s *AppState) SetLoading(loading bool) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	s.loading = loading
+func compileShader(source string, shaderType uint32) (uint32, error) {
+	shader := gl.CreateShader(shaderType)
+	csources, free := gl.Strs(source)
+	gl.ShaderSource(shader, 1, csources, nil)
+	free()
+	gl.CompileShader(shader)
+
+	var status int32
+	gl.GetShaderiv(shader, gl.COMPILE_STATUS, &status)
+	if status == gl.FALSE {
+		var logLength int32
+		gl.GetShaderiv(shader, gl.INFO_LOG_LENGTH, &logLength)
+		log := strings.Repeat("\x00", int(logLength+1))
+		gl.GetShaderInfoLog(shader, logLength, nil, gl.Str(log))
+		return 0, fmt.Errorf("failed to compile %v: %v", source, log)
+	}
+
+	return shader, nil
 }
 
-func (s *AppState) SetData(htmlstr string, loaded bool) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	s.htmlstr = htmlstr
-	s.dataLoaded = loaded
-	s.loading = false
+func createShaderProgram() (uint32, error) {
+	vertexShader, err := compileShader(vertexShaderSource, gl.VERTEX_SHADER)
+	if err != nil {
+		return 0, fmt.Errorf("failed to compile vertex shader: %v", err)
+	}
+
+	fragmentShader, err := compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER)
+	if err != nil {
+		return 0, fmt.Errorf("failed to compile fragment shader: %v", err)
+	}
+
+	program := gl.CreateProgram()
+	gl.AttachShader(program, vertexShader)
+	gl.AttachShader(program, fragmentShader)
+	gl.LinkProgram(program)
+
+	var status int32
+	gl.GetProgramiv(program, gl.LINK_STATUS, &status)
+	if status == gl.FALSE {
+		var logLength int32
+		gl.GetProgramiv(program, gl.INFO_LOG_LENGTH, &logLength)
+		log := strings.Repeat("\x00", int(logLength+1))
+		gl.GetProgramInfoLog(program, logLength, nil, gl.Str(log))
+		return 0, fmt.Errorf("failed to link program: %v", log)
+	}
+
+	gl.DeleteShader(vertexShader)
+	gl.DeleteShader(fragmentShader)
+
+	return program, nil
 }
 
-func (s *AppState) GetState() (string, bool, bool) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	return s.htmlstr, s.dataLoaded, s.loading
+// Функция для рендеринга многострочного текста
+func renderMultilineText(program uint32, text string, x, y float32, scale float32, color [3]float32, lineSpacing float32) {
+	lines := strings.Split(text, "\n")
+	lineHeight := float32(TextLIB.FontMetrics.Height>>6) * scale * lineSpacing
+
+	for i, line := range lines {
+		TextLIB.DrawText(program, line, x, y+float32(i)*lineHeight, scale, color)
+	}
 }
 
-func (s *AppState) SetZoom(zoom float32) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	s.zoomFactor = zoom
+// Функция для обновления матрицы проекции
+func updateProjection(program uint32) {
+	projection := [16]float32{
+		2.0 / float32(currentWidth), 0, 0, 0,
+		0, -2.0 / float32(currentHeight), 0, 0,
+		0, 0, 1, 0,
+		-1, 1, 0, 1,
+	}
+
+	gl.UseProgram(program)
+	projLoc := gl.GetUniformLocation(program, gl.Str("projection\x00"))
+	gl.UniformMatrix4fv(projLoc, 1, false, &projection[0])
 }
 
-func (s *AppState) GetZoom() float32 {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	return s.zoomFactor
+// Функция для переключения полноэкранного режима
+func toggleFullscreen(window *glfw.Window) {
+	if isFullscreen {
+		// Выход из полноэкранного режима
+		window.SetMonitor(nil, 100, 100, windowedWidth, windowedHeight, 0)
+		currentWidth = windowedWidth
+		currentHeight = windowedHeight
+		isFullscreen = false
+	} else {
+		// Вход в полноэкранный режим
+		monitor := glfw.GetPrimaryMonitor()
+		mode := monitor.GetVideoMode()
+		window.SetMonitor(monitor, 0, 0, mode.Width, mode.Height, mode.RefreshRate)
+		currentWidth = mode.Width
+		currentHeight = mode.Height
+		isFullscreen = true
+	}
+	gl.Viewport(0, 0, int32(currentWidth), int32(currentHeight))
 }
 
-func (s *AppState) GetScrollList() *widget.List {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	return &s.scrollList
+// Функция для изменения масштаба
+func adjustZoom(delta float32) {
+	zoom += delta
+	if zoom < 0.1 {
+		zoom = 0.1
+	} else if zoom > 5.0 {
+		zoom = 5.0
+	}
 }
 
-func createScaledTheme(zoomFactor float32) *material.Theme {
-	th := material.NewTheme()
-	th.Shaper = text.NewShaper(text.WithCollection(gofont.Collection()))
-	th.TextSize = unit.Sp(14 * zoomFactor)
-	return th
+// Callback для изменения размера окна
+func framebufferSizeCallback(window *glfw.Window, width, height int) {
+	currentWidth = width
+	currentHeight = height
+	if !isFullscreen {
+		windowedWidth = width
+		windowedHeight = height
+	}
+	gl.Viewport(0, 0, int32(width), int32(height))
+}
+
+// Callback для клавиатуры
+func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
+	if action == glfw.Press || action == glfw.Repeat {
+		switch key {
+		case glfw.KeyEscape:
+			if isFullscreen {
+				toggleFullscreen(window)
+			} else {
+				window.SetShouldClose(true)
+			}
+		case glfw.KeyF11:
+			toggleFullscreen(window)
+		case glfw.KeyEqual, glfw.KeyKPAdd: // + или = для увеличения
+			if mods&glfw.ModControl != 0 {
+				adjustZoom(0.1)
+			}
+		case glfw.KeyMinus, glfw.KeyKPSubtract: // - для уменьшения
+			if mods&glfw.ModControl != 0 {
+				adjustZoom(-0.1)
+			}
+		case glfw.Key0, glfw.KeyKP0: // 0 для сброса масштаба
+			if mods&glfw.ModControl != 0 {
+				zoom = 1.0
+			}
+		}
+	}
+}
+
+// Callback для скролла мыши
+func scrollCallback(window *glfw.Window, xoff, yoff float64) {
+	// Ctrl + scroll для масштабирования
+	if window.GetKey(glfw.KeyLeftControl) == glfw.Press || window.GetKey(glfw.KeyRightControl) == glfw.Press {
+		adjustZoom(float32(yoff) * 0.1)
+	}
 }
 
 func main() {
-	go func() {
-		w := new(app.Window)
-		w.Option(app.Title("Himera"))
+	if err := glfw.Init(); err != nil {
+		log.Fatalf("failed to initialize glfw: %v", err)
+	}
+	defer glfw.Terminate()
 
-		var ops op.Ops
-		appState := &AppState{
-			zoomFactor:           1.0,
-			scrollList:           widget.List{List: layout.List{Axis: layout.Vertical}},
-			LCanvasWidthPercent:  0.0,
-			RCanvasWidthPercent:  0.0,
-			UCanvasHeightPercent: 0.04,
-			DCanvasHeightPercent: 0.0,
+	glfw.WindowHint(glfw.Resizable, glfw.True) // Разрешаем изменение размера
+	glfw.WindowHint(glfw.ContextVersionMajor, 4)
+	glfw.WindowHint(glfw.ContextVersionMinor, 1)
+	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
+	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
+	glfw.WindowHint(glfw.Samples, 4)
+
+	window, err := glfw.CreateWindow(Monitor.Width, Monitor.Height, "System Info - F11: Fullscreen, Ctrl+/-: Zoom, Ctrl+0: Reset Zoom", nil, nil)
+	if err != nil {
+		log.Fatalf("failed to create window: %v", err)
+	}
+	window.MakeContextCurrent()
+
+	// Устанавливаем callback'и
+	window.SetFramebufferSizeCallback(framebufferSizeCallback)
+	window.SetKeyCallback(keyCallback)
+	window.SetScrollCallback(scrollCallback)
+
+	if err := gl.Init(); err != nil {
+		log.Fatalf("failed to initialize gl: %v", err)
+	}
+
+	program, err := createShaderProgram()
+	if err != nil {
+		log.Fatalf("failed to create shader program: %v", err)
+	}
+
+	if err := TextLIB.InitFont(); err != nil {
+		log.Fatalf("failed to initialize font: %v", err)
+	}
+
+	gl.Enable(gl.MULTISAMPLE)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+	updateProjection(program)
+
+	gl.ClearColor(0.1, 0.1, 0.1, 1.0)
+
+	req, _ := h.GETRequest("https://darq-project.ru/", "Himera/0.1B (Furry♥ X64; PurryForno*x86_64; x64; ver:=001B) HDS/001B Himera/0.1B")
+
+	var lastWidth, lastHeight int = currentWidth, currentHeight
+	var lastZoom float32 = zoom
+
+	for !window.ShouldClose() {
+		if currentWidth != lastWidth || currentHeight != lastHeight || zoom != lastZoom {
+			updateProjection(program)
+			lastWidth = currentWidth
+			lastZoom = zoom
 		}
 
-		const minZoom = 0.5
-		const maxZoom = 3.0
-		const zoomStep = 0.2
+		gl.Clear(gl.COLOR_BUFFER_BIT)
 
-		updateChan := make(chan struct{}, 1)
+		effectiveScale := zoom * 1.0
+		renderMultilineText(program, req.Page, 50*zoom, 50*zoom, effectiveScale, [3]float32{0.9, 0.6, 0.1}, 1.2)
 
-		appState.cachedTheme = createScaledTheme(1.0)
+		zoomInfo := fmt.Sprintf("Zoom: %.1fx", zoom)
+		TextLIB.DrawText(program, zoomInfo, float32(currentWidth)-200*zoom, 30*zoom, zoom, utils.RGBToFloat32(255, 255, 255))
 
-		go func() {
-			appState.SetLoading(true)
-			select {
-			case updateChan <- struct{}{}:
-			default:
-			}
-
-			req, err := h.GETRequest("https://max.ru/", "Himera/0.1B (Furry♥ X64; PurryForno*x86_64; x64; ver:=001B) HDS/001B Himera/0.1B")
-			if err != nil {
-				appState.SetData("", false)
-			} else {
-				appState.SetData(req.Page, req.Done)
-			}
-
-			select {
-			case updateChan <- struct{}{}:
-			default:
-			}
-			w.Invalidate()
-		}()
-
-		go func() {
-			ticker := time.NewTicker(16 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-updateChan:
-					w.Invalidate()
-				case <-ticker.C:
-					htmlstr, dataLoaded, loading := appState.GetState()
-					if loading || (!dataLoaded && htmlstr == "") {
-						w.Invalidate()
-					}
-				}
-			}
-		}()
-
-		for {
-			switch e := w.Event().(type) {
-			case app.DestroyEvent:
-				os.Exit(0)
-			case app.FrameEvent:
-				gtx := app.NewContext(&ops, e)
-
-				zoomChanged := false
-				currentZoom := appState.GetZoom()
-
-				for {
-					if e, ok := gtx.Event(key.Filter{Required: key.ModCtrl}); ok {
-						if ev, ok := e.(key.Event); ok && ev.State == key.Press {
-							switch ev.Name {
-							case "+", "Num+", "=":
-								newZoom := currentZoom + zoomStep
-								if newZoom <= maxZoom {
-									appState.SetZoom(newZoom)
-									zoomChanged = true
-								}
-							case "-", "Num-":
-								newZoom := currentZoom - zoomStep
-								if newZoom >= minZoom {
-									appState.SetZoom(newZoom)
-									zoomChanged = true
-								}
-							case "0":
-								if currentZoom != 1.0 {
-									appState.SetZoom(1.0)
-									zoomChanged = true
-								}
-							}
-						}
-						continue
-					}
-					break
-				}
-
-				if appState.cachedTheme == nil || zoomChanged {
-					appState.cachedTheme = createScaledTheme(appState.GetZoom())
-				}
-
-				htmlstr, dataLoaded, loading := appState.GetState()
-
-				layout.Stack{}.Layout(gtx,
-					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-						appState.mutex.RLock()
-						left := appState.LCanvasWidthPercent
-						right := appState.RCanvasWidthPercent
-						top := appState.UCanvasHeightPercent
-						bottom := appState.DCanvasHeightPercent
-						appState.mutex.RUnlock()
-
-						totalWidth := gtx.Constraints.Max.X
-						totalHeight := gtx.Constraints.Max.Y
-
-						xOffset := int(float32(totalWidth) * left)
-						yOffset := int(float32(totalHeight) * top)
-						width := int(float32(totalWidth) * (1.0 - left - right))
-						height := int(float32(totalHeight) * (1.0 - top - bottom))
-
-						gtx.Constraints.Min.X = 0
-						gtx.Constraints.Min.Y = 0
-						gtx.Constraints.Max.X = width
-						gtx.Constraints.Max.Y = height
-
-						call := op.Offset(image.Pt(xOffset, yOffset)).Push(gtx.Ops)
-						defer call.Pop()
-
-						if dataLoaded && htmlstr != "" {
-							scrollList := appState.GetScrollList()
-							return material.List(appState.cachedTheme, scrollList).Layout(gtx, 1, func(gtx layout.Context, index int) layout.Dimensions {
-								return layout.Inset{
-									Top:    unit.Dp(10 * appState.GetZoom()),
-									Bottom: unit.Dp(10 * appState.GetZoom()),
-									Left:   unit.Dp(10 * appState.GetZoom()),
-									Right:  unit.Dp(10 * appState.GetZoom()),
-								}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									htmlDrEngine := web.NewDRW(gtx, appState.cachedTheme, htmlstr)
-									return htmlDrEngine.RenderHTML()
-								})
-							})
-						}
-
-						if loading {
-							return material.H2(appState.cachedTheme, "Sending Request 🔄 Nya>.<").Layout(gtx)
-						}
-						return material.H2(appState.cachedTheme, "Loading failed").Layout(gtx)
-					}),
-				)
-
-				e.Frame(gtx.Ops)
-			}
-		}
-	}()
-	app.Main()
+		window.SwapBuffers()
+		glfw.PollEvents()
+	}
 }
