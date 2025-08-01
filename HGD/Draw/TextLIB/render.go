@@ -151,7 +151,7 @@ func InitFont() error {
 			TextureID: texture,
 			Size:      [2]int32{int32(w + padding*2), int32(h + padding*2)},
 			Bearing:   [2]int32{int32(bounds.Min.X>>6) - int32(padding), int32(bounds.Min.Y>>6) - int32(padding)},
-			Advance:   int32(advance >> 6), // Преобразуем в пиксели сразу
+			Advance:   int32(advance >> 6),
 		}
 	}
 
