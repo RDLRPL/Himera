@@ -280,7 +280,7 @@ func main() {
 	updateProjection(program)
 
 	log.Println("Loading HTML content...")
-	req, err := h.GETRequest("https://polytech.alabuga.ru", "Himera/0.1B (FURRY PORN_X64 Linux; X64) HDS/001B")
+	req, err := h.GETRequest("https://ai.onlysq.ru", "Himera/0.1B (FURRY PORN_X64 Linux; X64) HDS/001B")
 	if err != nil {
 		log.Printf("Failed to load HTML: %v", err)
 		errorHTML := `<!DOCTYPE html>
