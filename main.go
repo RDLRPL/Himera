@@ -4,6 +4,7 @@ import (
 	"log"
 	"runtime"
 	"strings"
+	"time"
 
 	h "github.com/RDLRPL/Himera/HDS/core/http"
 	draw "github.com/RDLRPL/Himera/HGD/Draw"
@@ -125,11 +126,7 @@ func scrollCallback(window *glfw.Window, xoff, yoff float64) {
 		adjustZoom(float32(yoff) * 0.1)
 	} else {
 		changeScrollOffset = scrollOffset + float32(yoff)*25.0
-		if changeScrollOffset > 0.000000001 {
-
-		} else {
-			scrollOffset = changeScrollOffset
-		}
+		scrollOffset = changeScrollOffset
 
 	}
 
@@ -179,12 +176,13 @@ func main() {
 
 	gl.ClearColor(0.1, 0.1, 0.1, 1.0)
 
-	req, _ := h.GETRequest("https://max.ru", "Himera/0.1B (Furry♥ X64; PurryForno*x86_64; x64; ver:=001B) HDS/001B Himera/0.1B")
+	req, _ := h.GETRequest("https://darq-project.ru", "Himera/0.1B (Furry♥ X64; PurryForno*x86_64; x64; ver:=001B) HDS/001B Himera/0.1B")
 
 	var lastWidth, lastHeight int = currentWidth, currentHeight
 	var lastZoom float32 = zoom
 
 	for !window.ShouldClose() {
+		time.Sleep(time.Millisecond * 16)
 		if currentWidth != lastWidth || currentHeight != lastHeight || zoom != lastZoom {
 			updateProjection(program)
 			lastWidth = currentWidth
