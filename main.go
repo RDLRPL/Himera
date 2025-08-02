@@ -26,7 +26,6 @@ var (
 	windowedWidth          = Monitor.Width
 	windowedHeight         = Monitor.Height
 
-	// HTML рендерер
 	htmlRenderer  *web.HTMLRenderer
 	contentHeight float32 = 0.0
 )
@@ -50,13 +49,11 @@ func updateProjection(program uint32) {
 
 func toggleFullscreen(window *glfw.Window) {
 	if isFullscreen {
-		// Возврат в оконный режим
 		window.SetMonitor(nil, 100, 100, windowedWidth, windowedHeight, 0)
 		currentWidth = windowedWidth
 		currentHeight = windowedHeight
 		isFullscreen = false
 	} else {
-		// Переход в полноэкранный режим
 		monitor := glfw.GetPrimaryMonitor()
 		mode := monitor.GetVideoMode()
 		window.SetMonitor(monitor, 0, 0, mode.Width, mode.Height, mode.RefreshRate)
@@ -66,7 +63,6 @@ func toggleFullscreen(window *glfw.Window) {
 	}
 	gl.Viewport(0, 0, int32(currentWidth), int32(currentHeight))
 
-	// Пересчитываем высоту контента при изменении размера окна
 	if htmlRenderer != nil {
 		ctx := &web.RenderContext{
 			Width:  float32(currentWidth),
@@ -87,9 +83,8 @@ func adjustZoom(delta float32) {
 
 	if newZoom != zoom {
 		zoom = newZoom
-		scrollOffset = 0 // Сброс скролла при изменении масштаба
+		scrollOffset = 0
 
-		// Пересчитываем высоту контента
 		if htmlRenderer != nil {
 			ctx := &web.RenderContext{
 				Width:  float32(currentWidth),
@@ -102,14 +97,26 @@ func adjustZoom(delta float32) {
 }
 
 func updateScrollLimits() {
+	if htmlRenderer == nil {
+		return
+	}
+
+	ctx := &web.RenderContext{
+		Width:  float32(currentWidth) - 20.0*zoom, // Учитываем отступы
+		Height: float32(currentHeight),
+		X:      10.0 * zoom,
+		Y:      10.0 * zoom,
+		Zoom:   zoom,
+	}
+	contentHeight = htmlRenderer.CalculateContentHeight(ctx)
+
 	maxScrollOffset := float32(0.0)
-	minScrollOffset := -float32(9900.0)
+	minScrollOffset := -(contentHeight - float32(currentHeight)*0.9)
 
 	if minScrollOffset > 0 {
 		minScrollOffset = 0
 	}
 
-	// Ограничиваем текущий скролл новыми лимитами
 	if scrollOffset > maxScrollOffset {
 		scrollOffset = maxScrollOffset
 	}
@@ -127,7 +134,6 @@ func framebufferSizeCallback(window *glfw.Window, width, height int) {
 	}
 	gl.Viewport(0, 0, int32(width), int32(height))
 
-	// Пересчитываем высоту контента при изменении размера окна
 	if htmlRenderer != nil {
 		ctx := &web.RenderContext{
 			Width:  float32(currentWidth),
@@ -198,10 +204,8 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 func scrollCallback(window *glfw.Window, xoff, yoff float64) {
 	if window.GetKey(glfw.KeyLeftControl) == glfw.Press ||
 		window.GetKey(glfw.KeyRightControl) == glfw.Press {
-		// Масштабирование с помощью Ctrl+Scroll
 		adjustZoom(float32(yoff) * 0.1)
 	} else {
-		// Обычный скроллинг
 		scrollOffset += float32(yoff) * 25.0
 		updateScrollLimits()
 	}
@@ -230,13 +234,11 @@ func renderHTML(program uint32) {
 }
 
 func main() {
-	// Инициализация GLFW
 	if err := glfw.Init(); err != nil {
 		log.Fatalf("failed to initialize glfw: %v", err)
 	}
 	defer glfw.Terminate()
 
-	// Настройка окна
 	glfw.WindowHint(glfw.Resizable, glfw.True)
 	glfw.WindowHint(glfw.ContextVersionMajor, 4)
 	glfw.WindowHint(glfw.ContextVersionMinor, 1)
@@ -250,28 +252,23 @@ func main() {
 	}
 	window.MakeContextCurrent()
 
-	// Установка коллбэков
 	window.SetFramebufferSizeCallback(framebufferSizeCallback)
 	window.SetKeyCallback(keyCallback)
 	window.SetScrollCallback(scrollCallback)
 
-	// Инициализация OpenGL
 	if err := gl.Init(); err != nil {
 		log.Fatalf("failed to initialize gl: %v", err)
 	}
 
-	// Создание шейдерной программы
 	program, err := draw.CreateShaderProgram()
 	if err != nil {
 		log.Fatalf("failed to create shader program: %v", err)
 	}
 
-	// Инициализация шрифтов
 	if err := TextLIB.InitFont(); err != nil {
 		log.Fatalf("failed to initialize font: %v", err)
 	}
 
-	// Настройка OpenGL
 	gl.Enable(gl.MULTISAMPLE)
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -280,7 +277,7 @@ func main() {
 	updateProjection(program)
 
 	log.Println("Loading HTML content...")
-	req, err := h.GETRequest("https://ai.onlysq.ru", "Himera/0.1B (FURRY PORN_X64 Linux; X64) HDS/001B")
+	req, err := h.GETRequest("https://example.com/", "Himera/0.1B (FURRY PORN_X64 Linux; X64) HDS/001B")
 	if err != nil {
 		log.Printf("Failed to load HTML: %v", err)
 		errorHTML := `<!DOCTYPE html>
@@ -322,12 +319,6 @@ func main() {
 	}
 	htmlRenderer.SetStyles(styles)
 
-	ctx := &web.RenderContext{
-		Width:  float32(currentWidth),
-		Height: float32(currentHeight),
-		Zoom:   zoom,
-	}
-	contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 	updateScrollLimits()
 
 	var lastWidth, lastHeight int = currentWidth, currentHeight
@@ -336,7 +327,6 @@ func main() {
 	for !window.ShouldClose() {
 		time.Sleep(time.Millisecond * 16)
 
-		// Обновляем проекцию при изменении размеров или масштаба
 		if currentWidth != lastWidth || currentHeight != lastHeight || zoom != lastZoom {
 			updateProjection(program)
 			lastWidth = currentWidth
@@ -344,13 +334,10 @@ func main() {
 			lastZoom = zoom
 		}
 
-		// Очищаем экран
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 
-		// Рендерим HTML
 		renderHTML(program)
 
-		// Обмен буферов и обработка событий
 		window.SwapBuffers()
 		glfw.PollEvents()
 	}

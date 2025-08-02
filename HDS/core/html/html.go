@@ -9,7 +9,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-// RenderContext содержит контекст для рендеринга HTML
 type RenderContext struct {
 	Program      uint32
 	X, Y         float32
@@ -19,29 +18,23 @@ type RenderContext struct {
 	Zoom         float32
 }
 
-// HTMLRenderer представляет рендерер HTML для вашего движка
 type HTMLRenderer struct {
 	htmlContent string
 	cachedDoc   *html.Node
 	bodyNode    *html.Node
 	parsed      bool
 
-	// Настройки стилей
 	styles *StyleConfig
 
-	// Кэш для оптимизации
 	textCache   map[*html.Node]string
 	layoutCache map[*html.Node]*LayoutInfo
 }
 
-// StyleConfig содержит настройки стилей для HTML элементов
 type StyleConfig struct {
-	// Цвета
 	TextColor    [3]float32
 	LinkColor    [3]float32
 	HeadingColor [3]float32
 
-	// Размеры шрифтов (относительно базового)
 	H1Size    float32
 	H2Size    float32
 	H3Size    float32
@@ -51,12 +44,10 @@ type StyleConfig struct {
 	BaseSize  float32
 	SmallSize float32
 
-	// Отступы
 	ParagraphSpacing float32
 	LineSpacing      float32
 	IndentSize       float32
 
-	// Размеры отступов для заголовков
 	H1MarginTop    float32
 	H1MarginBottom float32
 	H2MarginTop    float32
@@ -65,14 +56,12 @@ type StyleConfig struct {
 	H3MarginBottom float32
 }
 
-// LayoutInfo содержит информацию о расположении элемента
 type LayoutInfo struct {
 	X, Y          float32
 	Width, Height float32
 	LineHeight    float32
 }
 
-// NewHTMLRenderer создает новый HTML рендерер
 func NewHTMLRenderer(htmlContent string) *HTMLRenderer {
 	return &HTMLRenderer{
 		htmlContent: htmlContent,
@@ -82,7 +71,6 @@ func NewHTMLRenderer(htmlContent string) *HTMLRenderer {
 	}
 }
 
-// getDefaultStyles возвращает стандартные настройки стилей
 func getDefaultStyles() *StyleConfig {
 	return &StyleConfig{
 		TextColor:    utils.RGBToFloat32(255, 255, 255),
@@ -111,12 +99,10 @@ func getDefaultStyles() *StyleConfig {
 	}
 }
 
-// SetStyles позволяет настроить стили рендерера
 func (r *HTMLRenderer) SetStyles(styles *StyleConfig) {
 	r.styles = styles
 }
 
-// ensureParsed обеспечивает парсинг HTML, если он еще не был выполнен
 func (r *HTMLRenderer) ensureParsed() error {
 	if r.parsed {
 		return nil
@@ -139,10 +125,8 @@ func (r *HTMLRenderer) ensureParsed() error {
 	return nil
 }
 
-// Render рендерит HTML в заданном контексте
 func (r *HTMLRenderer) Render(ctx *RenderContext) error {
 	if err := r.ensureParsed(); err != nil {
-		// Рендерим ошибку
 		errorText := "HTML Parse Error: " + err.Error()
 		TextLIB.DrawText(ctx.Program, errorText, ctx.X, ctx.Y, ctx.Zoom, [3]float32{1, 0, 0})
 		return err
@@ -157,7 +141,6 @@ func (r *HTMLRenderer) Render(ctx *RenderContext) error {
 	return nil
 }
 
-// renderNode рендерит HTML узел
 func (r *HTMLRenderer) renderNode(ctx *RenderContext, node *html.Node, x, y float32) float32 {
 	currentY := y
 
@@ -178,11 +161,9 @@ func (r *HTMLRenderer) renderNode(ctx *RenderContext, node *html.Node, x, y floa
 	return currentY
 }
 
-// renderElement рендерит HTML элемент
 func (r *HTMLRenderer) renderElement(ctx *RenderContext, node *html.Node, x, y float32) float32 {
 	tag := strings.ToLower(node.Data)
 
-	// Получаем текст элемента из кэша
 	content := r.getCachedText(node)
 
 	switch tag {
@@ -265,7 +246,6 @@ func (r *HTMLRenderer) renderElement(ctx *RenderContext, node *html.Node, x, y f
 		}
 
 	case "strong", "b":
-		// Для жирного текста пока просто рендерим как обычный
 		if content != "" {
 			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.TextColor)
 		} else {
@@ -273,7 +253,6 @@ func (r *HTMLRenderer) renderElement(ctx *RenderContext, node *html.Node, x, y f
 		}
 
 	case "em", "i":
-		// Для курсива пока просто рендерим как обычный
 		if content != "" {
 			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.TextColor)
 		} else {
@@ -315,7 +294,6 @@ func (r *HTMLRenderer) renderElement(ctx *RenderContext, node *html.Node, x, y f
 	return y
 }
 
-// renderText рендерит многострочный текст
 func (r *HTMLRenderer) renderText(ctx *RenderContext, text string, x, y, scale float32, color [3]float32) float32 {
 	if text == "" {
 		return y
@@ -327,13 +305,11 @@ func (r *HTMLRenderer) renderText(ctx *RenderContext, text string, x, y, scale f
 
 	currentY := y
 	for _, line := range lines {
-		// Проверяем, видима ли строка на экране
 		if currentY+ctx.ScrollOffset > -lineHeight && currentY+ctx.ScrollOffset < ctx.Height+lineHeight {
 			TextLIB.DrawText(ctx.Program, line, x, currentY+ctx.ScrollOffset, effectiveScale, color)
 		}
 		currentY += lineHeight
 
-		// Если строка слишком далеко внизу экрана, прекращаем рендеринг
 		if currentY+ctx.ScrollOffset > ctx.Height+lineHeight*10 {
 			break
 		}
@@ -342,7 +318,6 @@ func (r *HTMLRenderer) renderText(ctx *RenderContext, text string, x, y, scale f
 	return currentY
 }
 
-// renderList рендерит список
 func (r *HTMLRenderer) renderList(ctx *RenderContext, node *html.Node, x, y float32, ordered bool) float32 {
 	currentY := y
 	itemNumber := 1
@@ -357,25 +332,21 @@ func (r *HTMLRenderer) renderList(ctx *RenderContext, node *html.Node, x, y floa
 				prefix = "  • "
 			}
 
-			// Рендерим префикс
 			currentY = r.renderText(ctx, prefix, x, currentY, r.styles.BaseSize, r.styles.TextColor)
 
-			// Рендерим содержимое элемента списка с отступом
 			itemY := currentY - float32(TextLIB.FontMetrics.Height>>6)*ctx.Zoom*r.styles.LineSpacing
 			currentY = r.renderNode(ctx, child, x+30*ctx.Zoom, itemY)
-			currentY += 5 * ctx.Zoom // Небольшой отступ между элементами
+			currentY += 5 * ctx.Zoom
 		}
 	}
 
 	return currentY + r.styles.ParagraphSpacing*ctx.Zoom
 }
 
-// renderListItem рендерит элемент списка
 func (r *HTMLRenderer) renderListItem(ctx *RenderContext, node *html.Node, x, y float32) float32 {
 	return r.renderNode(ctx, node, x, y)
 }
 
-// wrapText переносит текст по словам
 func (r *HTMLRenderer) wrapText(text string, maxWidth, scale float32) []string {
 	if maxWidth <= 0 {
 		return []string{text}
@@ -396,9 +367,7 @@ func (r *HTMLRenderer) wrapText(text string, maxWidth, scale float32) []string {
 		}
 		testLine += word
 
-		// Более точная оценка ширины текста
-		// Используем среднюю ширину символа из метрик шрифта
-		averageCharWidth := float32(TextLIB.FontMetrics.Height>>6) * 0.6 // Примерно 60% от высоты
+		averageCharWidth := float32(TextLIB.FontMetrics.Height>>6) * 0.6
 		estimatedWidth := float32(len(testLine)) * averageCharWidth * scale
 
 		if estimatedWidth > maxWidth && currentLine.Len() > 0 {
@@ -420,7 +389,6 @@ func (r *HTMLRenderer) wrapText(text string, maxWidth, scale float32) []string {
 	return lines
 }
 
-// getCachedText получает текст элемента из кэша
 func (r *HTMLRenderer) getCachedText(node *html.Node) string {
 	if cached, exists := r.textCache[node]; exists {
 		return cached
@@ -428,7 +396,6 @@ func (r *HTMLRenderer) getCachedText(node *html.Node) string {
 
 	result := extractTextOptimized(node)
 
-	// Ограничиваем размер кэша
 	if len(r.textCache) > 1000 {
 		r.textCache = make(map[*html.Node]string)
 	}
@@ -437,13 +404,11 @@ func (r *HTMLRenderer) getCachedText(node *html.Node) string {
 	return result
 }
 
-// CalculateContentHeight вычисляет общую высоту контента для скроллинга
 func (r *HTMLRenderer) CalculateContentHeight(ctx *RenderContext) float32 {
 	if err := r.ensureParsed(); err != nil {
-		return 100.0 // Возвращаем минимальную высоту при ошибке
+		return 100.0
 	}
 
-	// Создаем временный контекст для вычисления высоты
 	tempCtx := *ctx
 	tempCtx.ScrollOffset = 0
 
@@ -457,7 +422,6 @@ func (r *HTMLRenderer) CalculateContentHeight(ctx *RenderContext) float32 {
 	return endY - ctx.Y
 }
 
-// calculateNodeHeight вычисляет высоту узла без рендеринга
 func (r *HTMLRenderer) calculateNodeHeight(ctx *RenderContext, node *html.Node, x, y float32) float32 {
 	currentY := y
 
@@ -470,9 +434,10 @@ func (r *HTMLRenderer) calculateNodeHeight(ctx *RenderContext, node *html.Node, 
 		case html.TextNode:
 			text := cleanText(child.Data)
 			if text != "" && child.Parent != nil && !shouldSkipElement(child.Parent.Data) {
-				lines := r.wrapText(text, ctx.Width-x, r.styles.BaseSize*ctx.Zoom)
-				lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.styles.LineSpacing
-				currentY += float32(len(lines)) * lineHeight
+				parentTag := strings.ToLower(child.Parent.Data)
+				if !r.isTextHandledByElement(parentTag) {
+					currentY = r.calculateTextHeight(ctx, text, x, currentY, r.styles.BaseSize)
+				}
 			}
 		}
 	}
@@ -480,7 +445,6 @@ func (r *HTMLRenderer) calculateNodeHeight(ctx *RenderContext, node *html.Node, 
 	return currentY
 }
 
-// calculateElementHeight вычисляет высоту элемента без рендеринга
 func (r *HTMLRenderer) calculateElementHeight(ctx *RenderContext, node *html.Node, x, y float32) float32 {
 	tag := strings.ToLower(node.Data)
 	content := r.getCachedText(node)
@@ -489,9 +453,7 @@ func (r *HTMLRenderer) calculateElementHeight(ctx *RenderContext, node *html.Nod
 	case "h1":
 		if content != "" {
 			y += r.styles.H1MarginTop * ctx.Zoom
-			lines := r.wrapText(content, ctx.Width-x, r.styles.H1Size*ctx.Zoom)
-			lineHeight := float32(TextLIB.FontMetrics.Height>>6) * r.styles.H1Size * ctx.Zoom * r.styles.LineSpacing
-			y += float32(len(lines)) * lineHeight
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H1Size)
 			y += r.styles.H1MarginBottom * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
@@ -500,34 +462,113 @@ func (r *HTMLRenderer) calculateElementHeight(ctx *RenderContext, node *html.Nod
 	case "h2":
 		if content != "" {
 			y += r.styles.H2MarginTop * ctx.Zoom
-			lines := r.wrapText(content, ctx.Width-x, r.styles.H2Size*ctx.Zoom)
-			lineHeight := float32(TextLIB.FontMetrics.Height>>6) * r.styles.H2Size * ctx.Zoom * r.styles.LineSpacing
-			y += float32(len(lines)) * lineHeight
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H2Size)
 			y += r.styles.H2MarginBottom * ctx.Zoom
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "h3":
+		if content != "" {
+			y += r.styles.H3MarginTop * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H3Size)
+			y += r.styles.H3MarginBottom * ctx.Zoom
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "h4":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H4Size)
+			y += r.styles.ParagraphSpacing * ctx.Zoom
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "h5":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H5Size)
+			y += r.styles.ParagraphSpacing * ctx.Zoom
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "h6":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H6Size)
+			y += r.styles.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "p":
 		if content != "" {
-			lines := r.wrapText(content, ctx.Width-x, r.styles.BaseSize*ctx.Zoom)
-			lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.styles.LineSpacing
-			y += float32(len(lines)) * lineHeight
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
 			y += r.styles.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 			y += r.styles.ParagraphSpacing * ctx.Zoom
 		}
 
+	case "div":
+		y = r.calculateNodeHeight(ctx, node, x, y)
+		y += (r.styles.ParagraphSpacing / 2) * ctx.Zoom
+
+	case "span":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "a":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "strong", "b":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "em", "i":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
+	case "small":
+		if content != "" {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.SmallSize)
+		} else {
+			y = r.calculateNodeHeight(ctx, node, x, y)
+		}
+
 	case "br":
 		lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.styles.LineSpacing
 		y += lineHeight
 
+	case "hr":
+		y += 20 * ctx.Zoom
+
+	case "ul", "ol":
+		y = r.calculateListHeight(ctx, node, x, y, tag == "ol")
+
+	case "li":
+		y = r.calculateListItemHeight(ctx, node, x, y)
+
+	case "blockquote":
+		y = r.calculateNodeHeight(ctx, node, x+r.styles.IndentSize*ctx.Zoom, y)
+		y += r.styles.ParagraphSpacing * ctx.Zoom
+
 	default:
-		if content != "" {
-			lines := r.wrapText(content, ctx.Width-x, r.styles.BaseSize*ctx.Zoom)
-			lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.styles.LineSpacing
-			y += float32(len(lines)) * lineHeight
+		if content != "" && len(content) < 1000 {
+			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
@@ -536,9 +577,56 @@ func (r *HTMLRenderer) calculateElementHeight(ctx *RenderContext, node *html.Nod
 	return y
 }
 
-// Вспомогательные функции из оригинального кода
+func (r *HTMLRenderer) calculateTextHeight(ctx *RenderContext, text string, x, y, scale float32) float32 {
+	if text == "" {
+		return y
+	}
 
-// findBodyNode находит элемент body в HTML документе
+	effectiveScale := scale * ctx.Zoom
+	lines := r.wrapText(text, ctx.Width-x, effectiveScale)
+	lineHeight := float32(TextLIB.FontMetrics.Height>>6) * effectiveScale * r.styles.LineSpacing
+
+	return y + float32(len(lines))*lineHeight
+}
+
+func (r *HTMLRenderer) calculateListHeight(ctx *RenderContext, node *html.Node, x, y float32, ordered bool) float32 {
+	currentY := y
+	itemNumber := 1
+
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.ElementNode && strings.ToLower(child.Data) == "li" {
+			var prefix string
+			if ordered {
+				prefix = strings.Repeat(" ", 2) + string(rune('0'+itemNumber)) + ". "
+				itemNumber++
+			} else {
+				prefix = "  • "
+			}
+
+			currentY = r.calculateTextHeight(ctx, prefix, x, currentY, r.styles.BaseSize)
+
+			itemY := currentY - float32(TextLIB.FontMetrics.Height>>6)*ctx.Zoom*r.styles.LineSpacing
+			currentY = r.calculateNodeHeight(ctx, child, x+30*ctx.Zoom, itemY)
+			currentY += 5 * ctx.Zoom
+		}
+	}
+
+	return currentY + r.styles.ParagraphSpacing*ctx.Zoom
+}
+
+func (r *HTMLRenderer) calculateListItemHeight(ctx *RenderContext, node *html.Node, x, y float32) float32 {
+	return r.calculateNodeHeight(ctx, node, x, y)
+}
+
+func (r *HTMLRenderer) isTextHandledByElement(tag string) bool {
+	switch tag {
+	case "h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "a", "strong", "b", "em", "i", "small":
+		return true
+	default:
+		return false
+	}
+}
+
 func findBodyNode(node *html.Node) *html.Node {
 	if node.Type == html.ElementNode && node.Data == "body" {
 		return node
@@ -553,7 +641,6 @@ func findBodyNode(node *html.Node) *html.Node {
 	return nil
 }
 
-// shouldSkipElement проверяет, нужно ли пропустить элемент
 func shouldSkipElement(nodeName string) bool {
 	switch nodeName {
 	case "head", "title", "meta", "link", "script", "style", "noscript", "comment":
@@ -563,13 +650,11 @@ func shouldSkipElement(nodeName string) bool {
 	}
 }
 
-// cleanText очищает текст от лишних пробелов
 func cleanText(text string) string {
 	if text == "" {
 		return ""
 	}
 
-	// Быстрая проверка - если нет пробельных символов, возвращаем как есть
 	hasWhitespace := false
 	for _, r := range text {
 		if unicode.IsSpace(r) {
@@ -582,13 +667,11 @@ func cleanText(text string) string {
 		return text
 	}
 
-	// Удаляем лишние пробелы и переносы строк
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}
 
-	// Заменяем множественные пробелы одним
 	result := make([]rune, 0, len(text))
 	prevSpace := false
 
@@ -607,7 +690,6 @@ func cleanText(text string) string {
 	return strings.TrimSpace(string(result))
 }
 
-// extractTextOptimized извлекает весь текст из узла
 func extractTextOptimized(node *html.Node) string {
 	var parts []string
 

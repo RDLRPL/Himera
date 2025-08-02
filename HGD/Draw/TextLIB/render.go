@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"io/ioutil"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
@@ -17,7 +16,7 @@ var FontMetrics font.Metrics
 
 const (
 	FontSize = 14.0
-	Dpi      = 72.0
+	Dpi      = 96.0
 )
 
 type Character struct {
@@ -47,17 +46,14 @@ func DrawText(program uint32, text string, x, y float32, scale float32, color [3
 	colorLoc := gl.GetUniformLocation(program, gl.Str("textColor\x00"))
 	gl.Uniform3f(colorLoc, color[0], color[1], color[2])
 
-	// Включаем блендинг для прозрачности
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
-	// Базовая линия для правильного выравнивания текста
-	baseline := y + float32(FontMetrics.Ascent>>6)*scale
+	baseline := y
 
 	for _, ch := range text {
 		char := Characters[ch]
 		if char == nil {
-			// Используем символ замещения для неизвестных символов
 			char = Characters[rune('?')]
 			if char == nil {
 				continue
@@ -65,29 +61,28 @@ func DrawText(program uint32, text string, x, y float32, scale float32, color [3
 		}
 
 		xpos := x + float32(char.Bearing[0])*scale
-		ypos := baseline - float32(char.Bearing[1])*scale // Правильный расчет Y от базовой линии
+		ypos := baseline - float32(char.Bearing[1])*scale
 
 		w := float32(char.Size[0]) * scale
 		h := float32(char.Size[1]) * scale
 
-		// Правильная ориентация вершин и текстурных координат
 		vertices := []float32{
-			// Position      // Texture
-			xpos, ypos, 0.0, 1.0, // Bottom-left
-			xpos + w, ypos, 1.0, 1.0, // Bottom-right
-			xpos, ypos + h, 0.0, 0.0, // Top-left
+			xpos, ypos + h, 0.0, 1.0,
+			xpos, ypos, 0.0, 0.0,
+			xpos + w, ypos, 1.0, 0.0,
 
-			xpos + w, ypos, 1.0, 1.0, // Bottom-right
-			xpos, ypos + h, 0.0, 0.0, // Top-left
-			xpos + w, ypos + h, 1.0, 0.0, // Top-right
+			xpos, ypos + h, 0.0, 1.0,
+			xpos + w, ypos, 1.0, 0.0,
+			xpos + w, ypos + h, 1.0, 1.0,
 		}
+
 		gl.BindTexture(gl.TEXTURE_2D, char.TextureID)
 		gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
 		gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(vertices)*4, gl.Ptr(vertices))
 
 		gl.DrawArrays(gl.TRIANGLES, 0, 6)
 
-		x += float32(char.Advance>>6) * scale
+		x += float32(char.Advance) * scale
 	}
 
 	gl.BindVertexArray(0)
@@ -119,13 +114,12 @@ func InitFont() error {
 
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
 
-	// Добавляем расширенный набор символов включая кириллицу
 	ranges := [][2]rune{
-		{32, 126},    // ASCII
-		{160, 255},   // Расширенная латиница
-		{1040, 1103}, // Кириллица (А-Я, а-я)
-		{1025, 1025}, // Ё
-		{1105, 1105}, // ё
+		{32, 126},
+		{160, 255},
+		{1040, 1103},
+		{1025, 1025},
+		{1105, 1105},
 	}
 
 	for _, r := range ranges {
@@ -136,7 +130,6 @@ func InitFont() error {
 		}
 	}
 
-	// Создаем символ замещения для неизвестных символов
 	if Characters[rune('?')] == nil {
 		createCharacterTexture(face, '?')
 	}
@@ -150,11 +143,9 @@ func createCharacterTexture(face font.Face, ch rune) error {
 		return fmt.Errorf("glyph not found for character %c", ch)
 	}
 
-	// Вычисляем размеры символа с учетом padding
 	w := int((bounds.Max.X - bounds.Min.X) >> 6)
 	h := int((bounds.Max.Y - bounds.Min.Y) >> 6)
 
-	// Минимальные размеры
 	if w <= 0 {
 		w = int(FontSize / 2)
 	}
@@ -162,63 +153,42 @@ func createCharacterTexture(face font.Face, ch rune) error {
 		h = int(FontSize)
 	}
 
-	// Добавляем padding для лучшего качества
-	padding := 2
-	imgW := w + padding*2
-	imgH := h + padding*2
+	img := image.NewGray(image.Rect(0, 0, w, h))
 
-	// Создаем изображение с альфа-каналом
-	img := image.NewRGBA(image.Rect(0, 0, imgW, imgH))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetGray(x, y, color.Gray{0})
+		}
+	}
 
-	// Заполняем прозрачным цветом
-	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{0, 0, 0, 0}}, image.Point{}, draw.Src)
-
-	// Создаем drawer для рендеринга символа
 	drawer := &font.Drawer{
 		Dst:  img,
-		Src:  &image.Uniform{color.RGBA{255, 255, 255, 255}}, // Белый цвет
+		Src:  &image.Uniform{color.Gray{255}},
 		Face: face,
 		Dot: fixed.Point26_6{
-			X: -bounds.Min.X + fixed.I(padding),
-			Y: -bounds.Min.Y + fixed.I(padding),
+			X: -bounds.Min.X,
+			Y: -bounds.Min.Y,
 		},
 	}
 
 	drawer.DrawString(string(ch))
 
-	stride := img.Stride
-	tmp := make([]byte, stride)
-	for y := 0; y < imgH/2; y++ {
-		topOff := y * stride
-		botOff := (imgH - 1 - y) * stride
-
-		// сохраняем строку y
-		copy(tmp, img.Pix[topOff:topOff+stride])
-		// сверху копируем строку снизу
-		copy(img.Pix[topOff:topOff+stride], img.Pix[botOff:botOff+stride])
-		// снизу кладём сохранённую
-		copy(img.Pix[botOff:botOff+stride], tmp)
-	}
-
-	// Создаем OpenGL текстуру
 	var texture uint32
 	gl.GenTextures(1, &texture)
 	gl.BindTexture(gl.TEXTURE_2D, texture)
 
-	// Загружаем данные изображения в текстуру
 	gl.TexImage2D(
 		gl.TEXTURE_2D,
 		0,
-		gl.RGBA,
-		int32(imgW),
-		int32(imgH),
+		gl.RED,
+		int32(w),
+		int32(h),
 		0,
-		gl.RGBA,
+		gl.RED,
 		gl.UNSIGNED_BYTE,
 		gl.Ptr(img.Pix),
 	)
 
-	// Настраиваем параметры текстуры
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -226,15 +196,14 @@ func createCharacterTexture(face font.Face, ch rune) error {
 
 	Characters[ch] = &Character{
 		TextureID: texture,
-		Size:      [2]int32{int32(imgW), int32(imgH)},
-		Bearing:   [2]int32{int32(bounds.Min.X>>6) - int32(padding), int32(bounds.Max.Y>>6) + int32(padding)},
-		Advance:   int32(advance),
+		Size:      [2]int32{int32(w), int32(h)},
+		Bearing:   [2]int32{int32(bounds.Min.X >> 6), int32(bounds.Max.Y >> 6)},
+		Advance:   int32(advance >> 6),
 	}
 
 	return nil
 }
 
-// Дополнительная функция для получения размеров текста
 func GetTextDimensions(text string, scale float32) (width, height float32) {
 	if FontMetrics.Height == 0 {
 		return 0, 0
@@ -246,7 +215,7 @@ func GetTextDimensions(text string, scale float32) (width, height float32) {
 	for _, ch := range text {
 		char := Characters[ch]
 		if char != nil {
-			width += float32(char.Advance>>6) * scale
+			width += float32(char.Advance) * scale
 		}
 	}
 
