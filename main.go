@@ -9,6 +9,7 @@ import (
 	h "github.com/RDLRPL/Himera/HDS/core/http"
 	draw "github.com/RDLRPL/Himera/HGD/Draw"
 	"github.com/RDLRPL/Himera/HGD/Draw/TextLIB"
+	"github.com/RDLRPL/Himera/HGD/browser"
 	"github.com/RDLRPL/Himera/HGD/utils"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
@@ -16,19 +17,23 @@ import (
 )
 
 var Monitor, _ = utils.GetPrimaryMonitor()
-
 var (
-	currentWidth           = Monitor.Width
-	currentHeight          = Monitor.Height
-	zoom           float32 = 1.0
-	scrollOffset   float32 = 0.0
-	isFullscreen           = false
-	windowedWidth          = Monitor.Width
-	windowedHeight         = Monitor.Height
+	zoom         float32 = 1.0
+	scrollOffset float32 = 0.0
+	isFullscreen         = false
+	isMaximized          = false
 
 	htmlRenderer  *web.HTMLRenderer
 	contentHeight float32 = 0.0
+
+	curlink string = "https://steamcommunity.com/id/chepuxcat/"
+	gua     string = "(FurryPornox64 HimeraBrowsrx000)"
+
+	windowedX, windowedY, windowedWidth, windowedHeight int
+	wasMaximizedBeforeFullscreen                        bool
 )
+
+var Browse = browser.NewBrowser(Monitor.Width, Monitor.Height)
 
 func init() {
 	runtime.LockOSThread()
@@ -36,8 +41,8 @@ func init() {
 
 func updateProjection(program uint32) {
 	projection := [16]float32{
-		2.0 / float32(currentWidth), 0, 0, 0,
-		0, -2.0 / float32(currentHeight), 0, 0,
+		2.0 / float32(Browse.CurrentWidth), 0, 0, 0,
+		0, -2.0 / float32(Browse.CurrentHeight), 0, 0,
 		0, 0, -1, 0,
 		-1, 1, 0, 1,
 	}
@@ -49,27 +54,44 @@ func updateProjection(program uint32) {
 
 func toggleFullscreen(window *glfw.Window) {
 	if isFullscreen {
-		window.SetMonitor(nil, 100, 100, windowedWidth, windowedHeight, 0)
-		currentWidth = windowedWidth
-		currentHeight = windowedHeight
+		window.SetMonitor(nil, windowedX, windowedY, windowedWidth, windowedHeight, 0)
 		isFullscreen = false
+
+		if wasMaximizedBeforeFullscreen {
+			window.Maximize()
+			isMaximized = true
+		} else {
+			isMaximized = false
+		}
 	} else {
+		wasMaximizedBeforeFullscreen = isMaximized
+		windowedX, windowedY = window.GetPos()
+		windowedWidth, windowedHeight = window.GetSize()
+
 		monitor := glfw.GetPrimaryMonitor()
 		mode := monitor.GetVideoMode()
 		window.SetMonitor(monitor, 0, 0, mode.Width, mode.Height, mode.RefreshRate)
-		currentWidth = mode.Width
-		currentHeight = mode.Height
 		isFullscreen = true
+		Browse.CurrentWidth = mode.Width
+		Browse.CurrentHeight = mode.Height
 	}
-	gl.Viewport(0, 0, int32(currentWidth), int32(currentHeight))
+
+	gl.Viewport(0, 0, int32(Browse.CurrentWidth), int32(Browse.CurrentHeight))
 
 	if htmlRenderer != nil {
 		ctx := &web.RenderContext{
-			Width:  float32(currentWidth),
-			Height: float32(currentHeight),
+			Width:  float32(Browse.CurrentWidth),
+			Height: float32(Browse.CurrentHeight),
 			Zoom:   zoom,
 		}
 		contentHeight = htmlRenderer.CalculateContentHeight(ctx)
+		updateScrollLimits()
+	}
+}
+
+func windowMaximizeCallback(window *glfw.Window, maximized bool) {
+	if !isFullscreen {
+		isMaximized = maximized
 	}
 }
 
@@ -87,8 +109,8 @@ func adjustZoom(delta float32) {
 
 		if htmlRenderer != nil {
 			ctx := &web.RenderContext{
-				Width:  float32(currentWidth),
-				Height: float32(currentHeight),
+				Width:  float32(Browse.CurrentWidth),
+				Height: float32(Browse.CurrentHeight),
 				Zoom:   zoom,
 			}
 			contentHeight = htmlRenderer.CalculateContentHeight(ctx)
@@ -102,8 +124,8 @@ func updateScrollLimits() {
 	}
 
 	ctx := &web.RenderContext{
-		Width:  float32(currentWidth) - 20.0*zoom, // Учитываем отступы
-		Height: float32(currentHeight),
+		Width:  float32(Browse.CurrentWidth) - 20.0*zoom,
+		Height: float32(Browse.CurrentHeight),
 		X:      10.0 * zoom,
 		Y:      10.0 * zoom,
 		Zoom:   zoom,
@@ -111,7 +133,7 @@ func updateScrollLimits() {
 	contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 
 	maxScrollOffset := float32(0.0)
-	minScrollOffset := -(contentHeight - float32(currentHeight)*0.9)
+	minScrollOffset := -(contentHeight - float32(Browse.CurrentHeight)*0.9)
 
 	if minScrollOffset > 0 {
 		minScrollOffset = 0
@@ -126,18 +148,14 @@ func updateScrollLimits() {
 }
 
 func framebufferSizeCallback(window *glfw.Window, width, height int) {
-	currentWidth = width
-	currentHeight = height
-	if !isFullscreen {
-		windowedWidth = width
-		windowedHeight = height
-	}
+	Browse.CurrentWidth = width
+	Browse.CurrentHeight = height
 	gl.Viewport(0, 0, int32(width), int32(height))
 
 	if htmlRenderer != nil {
 		ctx := &web.RenderContext{
-			Width:  float32(currentWidth),
-			Height: float32(currentHeight),
+			Width:  float32(Browse.CurrentWidth),
+			Height: float32(Browse.CurrentHeight),
 			Zoom:   zoom,
 		}
 		contentHeight = htmlRenderer.CalculateContentHeight(ctx)
@@ -148,12 +166,8 @@ func framebufferSizeCallback(window *glfw.Window, width, height int) {
 func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
 	if action == glfw.Press || action == glfw.Repeat {
 		switch key {
-		case glfw.KeyEscape:
-			if isFullscreen {
-				toggleFullscreen(window)
-			} else {
-				window.SetShouldClose(true)
-			}
+		case glfw.KeyF5:
+			updateContent(curlink, gua)
 		case glfw.KeyF11:
 			toggleFullscreen(window)
 		case glfw.KeyEqual, glfw.KeyKPAdd:
@@ -164,32 +178,34 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 			if mods&glfw.ModControl != 0 {
 				adjustZoom(-0.1)
 			}
+
 		case glfw.Key0, glfw.KeyKP0:
 			if mods&glfw.ModControl != 0 {
 				zoom = 1.0
 				scrollOffset = 0
 				if htmlRenderer != nil {
 					ctx := &web.RenderContext{
-						Width:  float32(currentWidth),
-						Height: float32(currentHeight),
+						Width:  float32(Browse.CurrentWidth),
+						Height: float32(Browse.CurrentHeight),
 						Zoom:   zoom,
 					}
 					contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 				}
 			}
+
 		case glfw.KeyHome:
 			scrollOffset = 0
 		case glfw.KeyEnd:
 			updateScrollLimits()
-			scrollOffset = -(contentHeight - float32(currentHeight)*0.9)
+			scrollOffset = -(contentHeight - float32(Browse.CurrentHeight)*0.9)
 			if scrollOffset > 0 {
 				scrollOffset = 0
 			}
 		case glfw.KeyPageUp:
-			scrollOffset += float32(currentHeight) * 0.8
+			scrollOffset += float32(Browse.CurrentHeight) * 0.8
 			updateScrollLimits()
 		case glfw.KeyPageDown:
-			scrollOffset -= float32(currentHeight) * 0.8
+			scrollOffset -= float32(Browse.CurrentHeight) * 0.8
 			updateScrollLimits()
 		case glfw.KeyUp:
 			scrollOffset += 50.0
@@ -220,8 +236,8 @@ func renderHTML(program uint32) {
 		Program:      program,
 		X:            10.0 * zoom,
 		Y:            10.0 * zoom,
-		Width:        float32(currentWidth) - 20.0*zoom,
-		Height:       float32(currentHeight),
+		Width:        float32(Browse.CurrentWidth) - 20.0*zoom,
+		Height:       float32(Browse.CurrentHeight),
 		ScrollOffset: scrollOffset,
 		Zoom:         zoom,
 	}
@@ -233,51 +249,9 @@ func renderHTML(program uint32) {
 	}
 }
 
-func main() {
-	if err := glfw.Init(); err != nil {
-		log.Fatalf("failed to initialize glfw: %v", err)
-	}
-	defer glfw.Terminate()
-
-	glfw.WindowHint(glfw.Resizable, glfw.True)
-	glfw.WindowHint(glfw.ContextVersionMajor, 4)
-	glfw.WindowHint(glfw.ContextVersionMinor, 1)
-	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
-	glfw.WindowHint(glfw.Samples, 4)
-
-	window, err := glfw.CreateWindow(Monitor.Width, Monitor.Height, "Himera", nil, nil)
-	if err != nil {
-		log.Fatalf("failed to create window: %v", err)
-	}
-	window.MakeContextCurrent()
-
-	window.SetFramebufferSizeCallback(framebufferSizeCallback)
-	window.SetKeyCallback(keyCallback)
-	window.SetScrollCallback(scrollCallback)
-
-	if err := gl.Init(); err != nil {
-		log.Fatalf("failed to initialize gl: %v", err)
-	}
-
-	program, err := draw.CreateShaderProgram()
-	if err != nil {
-		log.Fatalf("failed to create shader program: %v", err)
-	}
-
-	if err := TextLIB.InitFont(); err != nil {
-		log.Fatalf("failed to initialize font: %v", err)
-	}
-
-	gl.Enable(gl.MULTISAMPLE)
-	gl.Enable(gl.BLEND)
-	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-	gl.ClearColor(0.1, 0.1, 0.1, 1.0)
-
-	updateProjection(program)
-
+func updateContent(link string, ua string) web.HTMLRenderer {
 	log.Println("Loading HTML content...")
-	req, err := h.GETRequest("https://www.chinese-symbols.net//", "Himera/0.1B (FURRY PORN_X64 Linux; X64) HDS/001B")
+	req, err := h.GETRequest(link, ua)
 	if err != nil {
 		log.Printf("Failed to load HTML: %v", err)
 		errorHTML := `
@@ -298,7 +272,63 @@ func main() {
 		log.Println("HTML content loaded successfully")
 		htmlRenderer = web.NewHTMLRenderer(req.Page)
 	}
+	return *htmlRenderer
+}
 
+func initializeWindowState(window *glfw.Window) {
+	isMaximized = window.GetAttrib(glfw.Maximized) == glfw.True
+
+	windowedWidth, windowedHeight = window.GetSize()
+	windowedX, windowedY = window.GetPos()
+}
+
+func main() {
+	if err := glfw.Init(); err != nil {
+		log.Fatalf("failed to initialize glfw: %v", err)
+	}
+	defer glfw.Terminate()
+
+	glfw.WindowHint(glfw.Resizable, glfw.True)
+	glfw.WindowHint(glfw.Maximized, glfw.True)
+	glfw.WindowHint(glfw.ContextVersionMajor, 4)
+	glfw.WindowHint(glfw.ContextVersionMinor, 1)
+	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
+	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
+	glfw.WindowHint(glfw.Samples, 4)
+
+	window, err := glfw.CreateWindow(1280, 720, "Himera", nil, nil)
+	if err != nil {
+		log.Fatalf("failed to create window: %v", err)
+	}
+	window.MakeContextCurrent()
+
+	window.SetMaximizeCallback(windowMaximizeCallback)
+	window.SetFramebufferSizeCallback(framebufferSizeCallback)
+	window.SetKeyCallback(keyCallback)
+	window.SetScrollCallback(scrollCallback)
+
+	initializeWindowState(window)
+
+	if err := gl.Init(); err != nil {
+		log.Fatalf("failed to initialize gl: %v", err)
+	}
+
+	program, err := draw.CreateShaderProgram()
+	if err != nil {
+		log.Fatalf("failed to create shader program: %v", err)
+	}
+
+	if err := TextLIB.InitFont(); err != nil {
+		log.Fatalf("failed to initialize font: %v", err)
+	}
+
+	gl.Enable(gl.MULTISAMPLE)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.ClearColor(0.1, 0.1, 0.1, 1.0)
+
+	updateProjection(program)
+	htmlRenderer := updateContent(curlink, gua)
 	styles := &web.StyleConfig{
 		TextColor:    utils.RGBToFloat32(240, 240, 240),
 		LinkColor:    utils.RGBToFloat32(100, 149, 237),
@@ -321,20 +351,20 @@ func main() {
 		H3MarginTop:    16.0,
 		H3MarginBottom: 8.0,
 	}
-	htmlRenderer.SetStyles(styles)
 
+	htmlRenderer.SetStyles(styles)
 	updateScrollLimits()
 
-	var lastWidth, lastHeight int = currentWidth, currentHeight
+	var lastWidth, lastHeight int = Browse.CurrentWidth, Browse.CurrentHeight
 	var lastZoom float32 = zoom
 
 	for !window.ShouldClose() {
 		time.Sleep(time.Millisecond * 16)
 
-		if currentWidth != lastWidth || currentHeight != lastHeight || zoom != lastZoom {
+		if Browse.CurrentWidth != lastWidth || Browse.CurrentHeight != lastHeight || zoom != lastZoom {
 			updateProjection(program)
-			lastWidth = currentWidth
-			lastHeight = currentHeight
+			lastWidth = Browse.CurrentWidth
+			lastHeight = Browse.CurrentHeight
 			lastZoom = zoom
 		}
 
@@ -345,5 +375,4 @@ func main() {
 		window.SwapBuffers()
 		glfw.PollEvents()
 	}
-
 }
