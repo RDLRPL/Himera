@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"io/ioutil"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
@@ -15,8 +16,8 @@ import (
 var FontMetrics font.Metrics
 
 const (
-	FontSize = 14.0
-	Dpi      = 96.0
+	FontSize = 16.0
+	Dpi      = 72.0
 )
 
 type Character struct {
@@ -27,6 +28,7 @@ type Character struct {
 }
 
 var Characters map[rune]*Character
+var fontFace font.Face
 
 func DrawText(program uint32, text string, x, y float32, scale float32, color [3]float32) {
 	gl.UseProgram(program)
@@ -49,7 +51,7 @@ func DrawText(program uint32, text string, x, y float32, scale float32, color [3
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
-	baseline := y
+	currentX := x
 
 	for _, ch := range text {
 		char := Characters[ch]
@@ -60,8 +62,8 @@ func DrawText(program uint32, text string, x, y float32, scale float32, color [3
 			}
 		}
 
-		xpos := x + float32(char.Bearing[0])*scale
-		ypos := baseline - float32(char.Bearing[1])*scale
+		xpos := currentX + float32(char.Bearing[0])*scale
+		ypos := y - float32(char.Size[1])*scale + float32(char.Bearing[1])*scale
 
 		w := float32(char.Size[0]) * scale
 		h := float32(char.Size[1]) * scale
@@ -82,7 +84,7 @@ func DrawText(program uint32, text string, x, y float32, scale float32, color [3
 
 		gl.DrawArrays(gl.TRIANGLES, 0, 6)
 
-		x += float32(char.Advance) * scale
+		currentX += float32(char.Advance) * scale
 	}
 
 	gl.BindVertexArray(0)
@@ -92,7 +94,7 @@ func DrawText(program uint32, text string, x, y float32, scale float32, color [3
 }
 
 func InitFont() error {
-	fontBytes, err := ioutil.ReadFile("HGD/ttf/arial.ttf")
+	fontBytes, err := ioutil.ReadFile("HGD/ttf/Hasklig.ttf")
 	if err != nil {
 		return fmt.Errorf("failed to read font file: %v", err)
 	}
@@ -104,13 +106,13 @@ func InitFont() error {
 
 	Characters = make(map[rune]*Character)
 
-	face := truetype.NewFace(f, &truetype.Options{
+	fontFace = truetype.NewFace(f, &truetype.Options{
 		Size:    FontSize,
 		DPI:     Dpi,
 		Hinting: font.HintingFull,
 	})
 
-	FontMetrics = face.Metrics()
+	FontMetrics = fontFace.Metrics()
 
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
 
@@ -124,14 +126,14 @@ func InitFont() error {
 
 	for _, r := range ranges {
 		for ch := r[0]; ch <= r[1]; ch++ {
-			if err := createCharacterTexture(face, ch); err != nil {
+			if err := createCharacterTexture(fontFace, ch); err != nil {
 				fmt.Printf("Warning: failed to create texture for character %c: %v\n", ch, err)
 			}
 		}
 	}
 
 	if Characters[rune('?')] == nil {
-		createCharacterTexture(face, '?')
+		createCharacterTexture(fontFace, '?')
 	}
 
 	return nil
@@ -143,27 +145,26 @@ func createCharacterTexture(face font.Face, ch rune) error {
 		return fmt.Errorf("glyph not found for character %c", ch)
 	}
 
-	w := int((bounds.Max.X - bounds.Min.X) >> 6)
-	h := int((bounds.Max.Y - bounds.Min.Y) >> 6)
+	glyphWidth := int(bounds.Max.X-bounds.Min.X) >> 6
+	glyphHeight := int(bounds.Max.Y-bounds.Min.Y) >> 6
 
-	if w <= 0 {
-		w = int(FontSize / 2)
+	bearingX := int(bounds.Min.X >> 6)
+	bearingY := int(bounds.Max.Y >> 6)
+
+	if glyphWidth <= 0 {
+		glyphWidth = 1
 	}
-	if h <= 0 {
-		h = int(FontSize)
+	if glyphHeight <= 0 {
+		glyphHeight = 1
 	}
 
-	img := image.NewGray(image.Rect(0, 0, w, h))
+	img := image.NewRGBA(image.Rect(0, 0, glyphWidth, glyphHeight))
 
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			img.SetGray(x, y, color.Gray{0})
-		}
-	}
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{0, 0, 0, 0}}, image.Point{}, draw.Src)
 
 	drawer := &font.Drawer{
 		Dst:  img,
-		Src:  &image.Uniform{color.Gray{255}},
+		Src:  &image.Uniform{color.RGBA{255, 255, 255, 255}},
 		Face: face,
 		Dot: fixed.Point26_6{
 			X: -bounds.Min.X,
@@ -180,11 +181,11 @@ func createCharacterTexture(face font.Face, ch rune) error {
 	gl.TexImage2D(
 		gl.TEXTURE_2D,
 		0,
-		gl.RED,
-		int32(w),
-		int32(h),
+		gl.RGBA,
+		int32(glyphWidth),
+		int32(glyphHeight),
 		0,
-		gl.RED,
+		gl.RGBA,
 		gl.UNSIGNED_BYTE,
 		gl.Ptr(img.Pix),
 	)
@@ -196,8 +197,8 @@ func createCharacterTexture(face font.Face, ch rune) error {
 
 	Characters[ch] = &Character{
 		TextureID: texture,
-		Size:      [2]int32{int32(w), int32(h)},
-		Bearing:   [2]int32{int32(bounds.Min.X >> 6), int32(bounds.Max.Y >> 6)},
+		Size:      [2]int32{int32(glyphWidth), int32(glyphHeight)},
+		Bearing:   [2]int32{int32(bearingX), int32(bearingY)},
 		Advance:   int32(advance >> 6),
 	}
 
@@ -220,4 +221,21 @@ func GetTextDimensions(text string, scale float32) (width, height float32) {
 	}
 
 	return width, height
+}
+
+func GetLineHeight(scale float32) float32 {
+	return float32(FontMetrics.Height>>6) * scale
+}
+
+func GetFontAscent(scale float32) float32 {
+	return float32(FontMetrics.Ascent>>6) * scale
+}
+
+func GetFontDescent(scale float32) float32 {
+	return float32(FontMetrics.Descent>>6) * scale
+}
+
+func GetBaselineY(y, height, scale float32) float32 {
+	ascent := GetFontAscent(scale)
+	return y + height/2 - ascent/2
 }

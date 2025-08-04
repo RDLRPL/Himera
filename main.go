@@ -277,18 +277,22 @@ func main() {
 	updateProjection(program)
 
 	log.Println("Loading HTML content...")
-	req, err := h.GETRequest("https://example.com/", "Himera/0.1B (FURRY PORN_X64 Linux; X64) HDS/001B")
+	req, err := h.GETRequest("https://www.chinese-symbols.net//", "Himera/0.1B (FURRY PORN_X64 Linux; X64) HDS/001B")
 	if err != nil {
 		log.Printf("Failed to load HTML: %v", err)
-		errorHTML := `<!DOCTYPE html>
-			<html>
-			<head><title>Error</title></head>
-			<body>
-			<h1>Failed to load page</h1>
-			<p>Error: ` + err.Error() + `</p>
-			<p>Please check your internet connection and try again.</p>
-			</body>
-			</html>`
+		errorHTML := `
+						<!DOCTYPE html>
+						<html>
+							<head>
+								<title>Error</title>
+							</head>
+							<body>
+								<h1>Failed to load page</h1>
+								<p>Error: ` + err.Error() + `</p>
+								<p>Please check your internet connection and try again.</p>
+							</body>
+						</html>
+					`
 		htmlRenderer = web.NewHTMLRenderer(errorHTML)
 	} else {
 		log.Println("HTML content loaded successfully")
@@ -342,5 +346,4 @@ func main() {
 		glfw.PollEvents()
 	}
 
-	log.Println("Browser closed")
 }
