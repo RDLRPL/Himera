@@ -34,7 +34,7 @@ if build == "RELEASE":
     os.environ['GOARCH'] = 'amd64'
     os.system('go build -ldflags="-s -w -H windowsgui" -x -v -o build/Release/Windows/himera_x64_86.exe')
 
-    shutil.copytree(os.path.join(curpath, 'HGD\\shaders\\text'), os.path.join(curpath, 'build\\Release\\Windows\\HGD\\shaders\\text'))
+    shutil.copytree(os.path.join(curpath, 'HGD\\shaders'), os.path.join(curpath, 'build\\Release\\Windows\\HGD\\shaders'))
     shutil.copytree(os.path.join(curpath, 'HGD\\ttf'), os.path.join(curpath, 'build\\Release\\Windows\\HGD\\ttf'))
 
     # WiP Linux
