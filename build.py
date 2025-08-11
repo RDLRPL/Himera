@@ -8,11 +8,6 @@ with open('build.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
 build = data["BuildType"]
-isCompileShaders = data["CompileShaders"]
-if isCompileShaders:
-    os.system('go build ShadersCompiler/CompileShaders.go && CompileShaders.exe')
-    os.remove('CompileShaders.exe')
-
 
 if build == "DEV":
     os.makedirs('build/Debug', exist_ok=True)

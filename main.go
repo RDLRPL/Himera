@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"time"
 	"unicode"
 
 	web "github.com/RDLRPL/Himera/HDS/core/html"
@@ -20,6 +19,27 @@ import (
 )
 
 var Monitor, _ = utils.GetPrimaryMonitor()
+
+type RenderState struct {
+	needsRedraw   bool
+	lastWidth     int
+	lastHeight    int
+	lastZoom      float32
+	lastScroll    float32
+	lastInputText string
+	lastFocused   bool
+	lastCursorPos int
+}
+
+var renderState = &RenderState{needsRedraw: true}
+
+type GLResources struct {
+	rectVAO, rectVBO uint32
+	initialized      bool
+}
+
+var glResources = &GLResources{}
+
 var (
 	zoom         float32 = 1.0
 	scrollOffset float32 = 0.0
@@ -29,7 +49,7 @@ var (
 	htmlRenderer  *web.HTMLRenderer
 	contentHeight float32 = 0.0
 
-	curlink string = "https://example.com"
+	curlink string = "https://www.youtube.com/watch?v=1x98VFWtLAk"
 	gua     string = "(FurryPornox64 HimeraBrowsrx000)"
 
 	windowedX, windowedY, windowedWidth, windowedHeight int
@@ -48,6 +68,58 @@ var Browse = browser.NewBrowser(Monitor.Width, Monitor.Height)
 
 func init() {
 	runtime.LockOSThread()
+}
+
+func initGLResources() {
+	if glResources.initialized {
+		return
+	}
+
+	gl.GenVertexArrays(1, &glResources.rectVAO)
+	gl.GenBuffers(1, &glResources.rectVBO)
+
+	glResources.initialized = true
+}
+
+func cleanupGLResources() {
+	if glResources.initialized {
+		gl.DeleteVertexArrays(1, &glResources.rectVAO)
+		gl.DeleteBuffers(1, &glResources.rectVBO)
+		glResources.initialized = false
+	}
+}
+
+func checkNeedsRedraw() bool {
+	if renderState.needsRedraw ||
+		renderState.lastWidth != Browse.CurrentWidth ||
+		renderState.lastHeight != Browse.CurrentHeight ||
+		renderState.lastZoom != zoom ||
+		renderState.lastScroll != scrollOffset ||
+		renderState.lastInputText != inputText ||
+		renderState.lastFocused != inputBoxFocused ||
+		renderState.lastCursorPos != cursorPosition {
+
+		renderState.lastWidth = Browse.CurrentWidth
+		renderState.lastHeight = Browse.CurrentHeight
+		renderState.lastZoom = zoom
+		renderState.lastScroll = scrollOffset
+		renderState.lastInputText = inputText
+		renderState.lastFocused = inputBoxFocused
+		renderState.lastCursorPos = cursorPosition
+		renderState.needsRedraw = false
+
+		return true
+	}
+
+	if inputBoxFocused {
+		return true
+	}
+
+	return false
+}
+
+func markNeedsRedraw() {
+	renderState.needsRedraw = true
 }
 
 func updateProjection(program uint32) {
@@ -98,11 +170,14 @@ func toggleFullscreen(window *glfw.Window) {
 		contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 		updateScrollLimits()
 	}
+
+	markNeedsRedraw()
 }
 
 func windowMaximizeCallback(window *glfw.Window, maximized bool) {
 	if !isFullscreen {
 		isMaximized = maximized
+		markNeedsRedraw()
 	}
 }
 
@@ -126,6 +201,8 @@ func adjustZoom(delta float32) {
 			}
 			contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 		}
+
+		markNeedsRedraw()
 	}
 }
 
@@ -173,62 +250,63 @@ func framebufferSizeCallback(window *glfw.Window, width, height int) {
 		contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 		updateScrollLimits()
 	}
+
+	markNeedsRedraw()
 }
 
 func charCallback(window *glfw.Window, char rune) {
 	if inputBoxFocused && unicode.IsPrint(char) {
 		inputText = inputText[:cursorPosition] + string(char) + inputText[cursorPosition:]
 		cursorPosition++
+		markNeedsRedraw()
 	}
 }
 
 func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
 	if action == glfw.Press || action == glfw.Repeat {
+		needsRedraw := false
+
 		if inputBoxFocused {
 			switch key {
 			case glfw.KeyEnter:
 				curlink = inputText
 				updateContent(curlink, gua)
 				inputBoxFocused = false
-				return
+				needsRedraw = true
 			case glfw.KeyEscape:
 				inputBoxFocused = false
-				return
+				needsRedraw = true
 			case glfw.KeyBackspace:
 				if cursorPosition > 0 {
 					inputText = inputText[:cursorPosition-1] + inputText[cursorPosition:]
 					cursorPosition--
+					needsRedraw = true
 				}
-				return
 			case glfw.KeyDelete:
 				if cursorPosition < len(inputText) {
 					inputText = inputText[:cursorPosition] + inputText[cursorPosition+1:]
+					needsRedraw = true
 				}
-				return
 			case glfw.KeyLeft:
 				if cursorPosition > 0 {
 					cursorPosition--
+					needsRedraw = true
 				}
-				return
 			case glfw.KeyRight:
 				if cursorPosition < len(inputText) {
 					cursorPosition++
+					needsRedraw = true
 				}
-				return
 			case glfw.KeyHome:
 				cursorPosition = 0
-				return
+				needsRedraw = true
 			case glfw.KeyEnd:
 				cursorPosition = len(inputText)
-				return
+				needsRedraw = true
 			case glfw.KeyA:
 				if mods&glfw.ModControl != 0 {
 					cursorPosition = len(inputText)
-					return
-				}
-			case glfw.KeyV:
-				if mods&glfw.ModControl != 0 {
-					return
+					needsRedraw = true
 				}
 			}
 		}
@@ -236,21 +314,25 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 		switch key {
 		case glfw.KeyF5:
 			updateContent(curlink, gua)
+			needsRedraw = true
 		case glfw.KeyF11:
 			toggleFullscreen(window)
+			needsRedraw = true
 		case glfw.KeyL:
 			if mods&glfw.ModControl != 0 {
 				inputBoxFocused = true
 				cursorPosition = len(inputText)
-				return
+				needsRedraw = true
 			}
 		case glfw.KeyEqual, glfw.KeyKPAdd:
 			if mods&glfw.ModControl != 0 {
 				adjustZoom(0.1)
+				needsRedraw = true
 			}
 		case glfw.KeyMinus, glfw.KeyKPSubtract:
 			if mods&glfw.ModControl != 0 {
 				adjustZoom(-0.1)
+				needsRedraw = true
 			}
 		case glfw.Key0, glfw.KeyKP0:
 			if mods&glfw.ModControl != 0 {
@@ -264,6 +346,7 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 					}
 					contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 				}
+				needsRedraw = true
 			}
 		}
 
@@ -271,6 +354,7 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 			switch key {
 			case glfw.KeyHome:
 				scrollOffset = 0
+				needsRedraw = true
 			case glfw.KeyEnd:
 				updateScrollLimits()
 				availableHeight := float32(Browse.CurrentHeight) - inputBoxHeight - 20.0
@@ -278,19 +362,28 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 				if scrollOffset > 0 {
 					scrollOffset = 0
 				}
+				needsRedraw = true
 			case glfw.KeyPageUp:
 				scrollOffset += float32(Browse.CurrentHeight) * 0.8
 				updateScrollLimits()
+				needsRedraw = true
 			case glfw.KeyPageDown:
 				scrollOffset -= float32(Browse.CurrentHeight) * 0.8
 				updateScrollLimits()
+				needsRedraw = true
 			case glfw.KeyUp:
 				scrollOffset += 50.0
 				updateScrollLimits()
+				needsRedraw = true
 			case glfw.KeyDown:
 				scrollOffset -= 50.0
 				updateScrollLimits()
+				needsRedraw = true
 			}
+		}
+
+		if needsRedraw {
+			markNeedsRedraw()
 		}
 	}
 }
@@ -310,7 +403,6 @@ func mouseButtonCallback(window *glfw.Window, button glfw.MouseButton, action gl
 			} else if relativeX > textWidth {
 				cursorPosition = len(inputText)
 			} else {
-
 				cursorPosition = int(float32(len(inputText)) * (relativeX / textWidth))
 				if cursorPosition < 0 {
 					cursorPosition = 0
@@ -322,6 +414,7 @@ func mouseButtonCallback(window *glfw.Window, button glfw.MouseButton, action gl
 		} else {
 			inputBoxFocused = false
 		}
+		markNeedsRedraw()
 	}
 }
 
@@ -334,10 +427,15 @@ func scrollCallback(window *glfw.Window, xoff, yoff float64) {
 			scrollOffset += float32(yoff) * 25.0
 			updateScrollLimits()
 		}
+		markNeedsRedraw()
+	}
+}
+
+func drawRect(program uint32, x, y, width, height float32, color [3]float32) {
+	if !glResources.initialized {
+		initGLResources()
 	}
 
-}
-func drawRect(program uint32, x, y, width, height float32, color [3]float32) {
 	vertices := []float32{
 		x, y,
 		x, y + height,
@@ -347,13 +445,9 @@ func drawRect(program uint32, x, y, width, height float32, color [3]float32) {
 		x + width, y,
 	}
 
-	var vao, vbo uint32
-	gl.GenVertexArrays(1, &vao)
-	gl.GenBuffers(1, &vbo)
-
-	gl.BindVertexArray(vao)
-	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-	gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices), gl.STATIC_DRAW)
+	gl.BindVertexArray(glResources.rectVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, glResources.rectVBO)
+	gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices), gl.STREAM_DRAW)
 
 	gl.VertexAttribPointer(0, 2, gl.FLOAT, false, 2*4, nil)
 	gl.EnableVertexAttribArray(0)
@@ -374,40 +468,28 @@ func drawRect(program uint32, x, y, width, height float32, color [3]float32) {
 	colorLoc := gl.GetUniformLocation(program, gl.Str("fillColor\x00"))
 	if colorLoc >= 0 {
 		gl.Uniform3f(colorLoc, color[0], color[1], color[2])
-
 	}
 
 	if width > 0 && height > 0 {
-		gl.BindVertexArray(vao)
 		gl.DrawArrays(gl.TRIANGLES, 0, 6)
-
-		if err := gl.GetError(); err != gl.NO_ERROR {
-			log.Printf("OpenGL error: %d", err)
-		}
 	}
 
 	gl.BindVertexArray(0)
-	gl.DeleteVertexArrays(1, &vao)
-	gl.DeleteBuffers(1, &vbo)
 }
 
 func drawInputBox(rectProgram uint32, textProgram uint32) {
-	inputBoxY := float32(5.0)
-	inputBoxWidth := float32(Browse.CurrentWidth) - 20.0
+	inputBoxWidth := float32(Browse.CurrentWidth)
 
-	drawRect(rectProgram, 10.0, inputBoxY, inputBoxWidth, inputBoxHeight,
-		utils.RGBToFloat32(38, 38, 38))
+	drawRect(rectProgram, 0, 0, inputBoxWidth, inputBoxHeight,
+		utils.RGBToFloat32(200, 200, 200))
 
 	borderColor := utils.RGBToFloat32(0, 0, 0)
-	if inputBoxFocused {
-		borderColor = utils.RGBToFloat32(74, 74, 74)
-	}
-	drawRectOutline(rectProgram, 10.0, inputBoxY, inputBoxWidth, inputBoxHeight, 2.0, borderColor)
+	drawRectOutline(rectProgram, 0, 0, inputBoxWidth, inputBoxHeight, 2.0, borderColor)
 
 	gl.UseProgram(textProgram)
 
-	textY := inputBoxY + inputBoxHeight/2 - TextLIB.GetLineHeight(1.0)/2 + TextLIB.GetFontAscent(1.0)
-	TextLIB.DrawText(textProgram, inputText, 15.0, textY, 1.0,
+	textY := 0 + inputBoxHeight/2 - TextLIB.GetLineHeight(1.0)/2 + TextLIB.GetFontAscent(1.0)
+	TextLIB.DrawText(textProgram, inputText, 0, textY, 1.0,
 		utils.RGBToFloat32(0, 0, 0))
 
 	if inputBoxFocused {
@@ -415,23 +497,20 @@ func drawInputBox(rectProgram uint32, textProgram uint32) {
 		if int(blinkTimer/500)%2 == 0 {
 			cursorText := inputText[:cursorPosition]
 			cursorX, _ := TextLIB.GetTextDimensions(cursorText, 1.0)
-			drawRect(rectProgram, 15.0+cursorX, inputBoxY+5.0, 2.0, inputBoxHeight-10.0,
+			drawRect(rectProgram, 0+cursorX, 0+5.0, 2.0, inputBoxHeight-10.0,
 				[3]float32{0.0, 0.0, 0.0})
 			gl.UseProgram(textProgram)
 		}
 	}
 
 	if inputText == "" {
-		TextLIB.DrawText(textProgram, "Url", 15.0, textY, 1.0,
+		TextLIB.DrawText(textProgram, "Url", 0, textY, 1.0,
 			utils.RGBToFloat32(150, 150, 150))
 	}
 }
 
 func drawRectOutline(program uint32, x, y, width, height, lineWidth float32, color [3]float32) {
-	drawRect(program, x, y, width, lineWidth, color)
 	drawRect(program, x, y+height-lineWidth, width, lineWidth, color)
-	drawRect(program, x, y, lineWidth, height, color)
-	drawRect(program, x+width-lineWidth, y, lineWidth, height, color)
 }
 
 func renderHTML(program uint32) {
@@ -459,7 +538,6 @@ func renderHTML(program uint32) {
 func updateContent(link string, ua string) web.HTMLRenderer {
 	req, err := h.GETRequest(link, ua)
 	if err != nil {
-		log.Printf("Failed to load HTML: %v", err)
 		errorHTML := `
 						<!DOCTYPE html>
 						<html>
@@ -482,7 +560,6 @@ func updateContent(link string, ua string) web.HTMLRenderer {
 
 func initializeWindowState(window *glfw.Window) {
 	isMaximized = window.GetAttrib(glfw.Maximized) == glfw.True
-
 	windowedWidth, windowedHeight = window.GetSize()
 	windowedX, windowedY = window.GetPos()
 }
@@ -494,6 +571,7 @@ func main() {
 	defer glfw.Terminate()
 
 	glfw.WindowHint(glfw.Resizable, glfw.True)
+	glfw.WindowHint(glfw.Decorated, glfw.False)
 	glfw.WindowHint(glfw.Maximized, glfw.True)
 	glfw.WindowHint(glfw.ContextVersionMajor, 4)
 	glfw.WindowHint(glfw.ContextVersionMinor, 1)
@@ -505,6 +583,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("glfw Window ? %v", err)
 	}
+	defer cleanupGLResources()
+
 	window.MakeContextCurrent()
 
 	window.SetMaximizeCallback(windowMaximizeCallback)
@@ -535,12 +615,13 @@ func main() {
 
 	data := draw.ShadersPrograms{}
 	binary.Read(f, binary.LittleEndian, &data)
-	log.Println(data)
 	textPrg := data.TextShaderProgram
 
 	if err := TextLIB.InitFont(); err != nil {
 		log.Fatalf("init font ? %v", err)
 	}
+
+	initGLResources()
 
 	gl.Enable(gl.MULTISAMPLE)
 	gl.Enable(gl.BLEND)
@@ -575,32 +656,28 @@ func main() {
 	htmlRenderer.SetStyles(styles)
 	updateScrollLimits()
 
-	var lastWidth, lastHeight int = Browse.CurrentWidth, Browse.CurrentHeight
-	var lastZoom float32 = zoom
+	glfw.SwapInterval(1)
 
 	for !window.ShouldClose() {
-		time.Sleep(time.Millisecond * 16)
+		glfw.WaitEventsTimeout(0.016)
 
-		if Browse.CurrentWidth != lastWidth || Browse.CurrentHeight != lastHeight || zoom != lastZoom {
-			updateProjection(textPrg)
-			lastWidth = Browse.CurrentWidth
-			lastHeight = Browse.CurrentHeight
-			lastZoom = zoom
+		if checkNeedsRedraw() {
+			if renderState.lastWidth != Browse.CurrentWidth ||
+				renderState.lastHeight != Browse.CurrentHeight ||
+				renderState.lastZoom != zoom {
+				updateProjection(textPrg)
+			}
+
+			if inputBoxFocused {
+				window.SetCursor(glfw.CreateStandardCursor(glfw.IBeamCursor))
+			} else {
+				window.SetCursor(glfw.CreateStandardCursor(glfw.ArrowCursor))
+			}
+
+			gl.Clear(gl.COLOR_BUFFER_BIT)
+			renderHTML(textPrg)
+			drawInputBox(data.RectShaderProgram, textPrg)
+			window.SwapBuffers()
 		}
-
-		if inputBoxFocused {
-			window.SetCursor(glfw.CreateStandardCursor(glfw.IBeamCursor))
-		} else {
-
-			window.SetCursor(glfw.CreateStandardCursor(glfw.ArrowCursor))
-		}
-		gl.Clear(gl.COLOR_BUFFER_BIT)
-
-		renderHTML(textPrg)
-
-		drawInputBox(data.RectShaderProgram, textPrg)
-
-		window.SwapBuffers()
-		glfw.PollEvents()
 	}
 }

@@ -1,4 +1,3 @@
 {
-    "BuildType": "DEV",
-    "CompileShaders": true
+    "BuildType": "DEV"
 }
