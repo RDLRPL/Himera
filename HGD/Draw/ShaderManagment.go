@@ -1,7 +1,10 @@
 package draw
 
 import (
+	"encoding/binary"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 
 	shaders "github.com/RDLRPL/Himera/HGD/utils/Shaders"
@@ -108,7 +111,7 @@ func MakeShadersPrgs() (ShadersPrograms, error) {
 	gl.DeleteShader(Shaders.TextShaderFrag)
 	gl.DetachShader(Tp, Shaders.TextShaderVertex)
 	gl.DetachShader(Tp, Shaders.TextShaderFrag)
-	// Vertex
+	// RECT
 	gl.DeleteShader(Shaders.RectShaderVertex)
 	gl.DeleteShader(Shaders.RectShaderFrag)
 	gl.DetachShader(Rp, Shaders.RectShaderVertex)
@@ -118,4 +121,17 @@ func MakeShadersPrgs() (ShadersPrograms, error) {
 		TextShaderProgram: Tp,
 		RectShaderProgram: Rp,
 	}, nil
+}
+
+func ToBinare(sp ShadersPrograms) {
+	f, err := os.Create("Shaders.bin")
+	if err != nil {
+		log.Fatal("Couldn't open file")
+	}
+	defer f.Close()
+
+	err = binary.Write(f, binary.LittleEndian, sp)
+	if err != nil {
+		log.Fatal("Write failed")
+	}
 }

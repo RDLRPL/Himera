@@ -8,6 +8,11 @@ with open('build.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
 build = data["BuildType"]
+isCompileShaders = data["CompileShaders"]
+if isCompileShaders:
+    os.system('go build ShadersCompiler/CompileShaders.go && CompileShaders.exe')
+    os.remove('CompileShaders.exe')
+
 
 if build == "DEV":
     os.makedirs('build/Debug', exist_ok=True)
@@ -20,7 +25,6 @@ if build == "DEBUG":
 
     os.system('go build -x -v -o build/Debug/himera.exe')
 
-    shutil.copytree(os.path.join(curpath, 'HGD\\shaders\\text'), os.path.join(curpath, 'build\\Debug\\HGD\\shaders\\text'))
     shutil.copytree(os.path.join(curpath, 'HGD\\ttf'), os.path.join(curpath, 'build\\Debug\\HGD\\ttf'))
 
 if build == "RELEASE":
@@ -34,7 +38,6 @@ if build == "RELEASE":
     os.environ['GOARCH'] = 'amd64'
     os.system('go build -ldflags="-s -w -H windowsgui" -x -v -o build/Release/Windows/himera_x64_86.exe')
 
-    shutil.copytree(os.path.join(curpath, 'HGD\\shaders'), os.path.join(curpath, 'build\\Release\\Windows\\HGD\\shaders'))
     shutil.copytree(os.path.join(curpath, 'HGD\\ttf'), os.path.join(curpath, 'build\\Release\\Windows\\HGD\\ttf'))
 
     # WiP Linux

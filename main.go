@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/binary"
 	"log"
+	"os"
 	"runtime"
 	"time"
 	"unicode"
@@ -27,17 +29,19 @@ var (
 	htmlRenderer  *web.HTMLRenderer
 	contentHeight float32 = 0.0
 
-	curlink string = "https://polytech.alabuga.ru"
+	curlink string = "https://example.com"
 	gua     string = "(FurryPornox64 HimeraBrowsrx000)"
 
 	windowedX, windowedY, windowedWidth, windowedHeight int
 	wasMaximizedBeforeFullscreen                        bool
 
-	inputBoxFocused bool    = false
-	inputText       string  = curlink
-	cursorPosition  int     = len(curlink)
-	inputBoxHeight  float32 = 40.0
-	blinkTimer      float64 = 0.0
+	inputBoxFocused bool = false
+
+	inputText      string = curlink
+	cursorPosition int    = len(curlink)
+
+	inputBoxHeight float32 = 40.0
+	blinkTimer     float64 = 0.0
 )
 
 var Browse = browser.NewBrowser(Monitor.Width, Monitor.Height)
@@ -520,7 +524,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("shader program ? %v", err)
 	}
-	textPrg := prgs.TextShaderProgram
+
+	draw.ToBinare(prgs)
+
+	f, err := os.Open("Shaders.bin")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer f.Close()
+
+	data := draw.ShadersPrograms{}
+	binary.Read(f, binary.LittleEndian, &data)
+	log.Println(data)
+	textPrg := data.TextShaderProgram
 
 	if err := TextLIB.InitFont(); err != nil {
 		log.Fatalf("init font ? %v", err)
@@ -582,7 +598,7 @@ func main() {
 
 		renderHTML(textPrg)
 
-		drawInputBox(prgs.RectShaderProgram, textPrg)
+		drawInputBox(data.RectShaderProgram, textPrg)
 
 		window.SwapBuffers()
 		glfw.PollEvents()
