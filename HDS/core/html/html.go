@@ -4,8 +4,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/RDLRPL/Himera/HGD/Draw/TextLIB"
-	"github.com/RDLRPL/Himera/HGD/utils"
+	"github.com/RDLxxx/Himera/HGD/Draw/TextLIB"
+	"github.com/RDLxxx/Himera/HGD/utils"
 	"golang.org/x/net/html"
 )
 

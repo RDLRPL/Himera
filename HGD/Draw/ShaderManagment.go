@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	shaders "github.com/RDLRPL/Himera/HGD/utils/Shaders"
+	shaders "github.com/RDLxxx/Himera/HGD/utils/Shaders"
 	"github.com/go-gl/gl/v4.1-core/gl"
 )
 

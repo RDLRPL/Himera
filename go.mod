@@ -1,4 +1,4 @@
-module github.com/RDLRPL/Himera
+module github.com/RDLxxx/Himera
 
 go 1.24.0
 

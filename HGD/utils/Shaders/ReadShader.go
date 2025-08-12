@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/RDLRPL/Himera/HGD/utils"
+	"github.com/RDLxxx/Himera/HGD/utils"
 )
 
 type Shaders struct {
