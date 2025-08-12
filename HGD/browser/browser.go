@@ -1,5 +1,7 @@
 package browser
 
+import web "github.com/RDLxxx/Himera/HDS/core/html"
+
 type RenderState struct {
 	NeedsRedraw   bool
 	LastWidth     int
@@ -22,14 +24,27 @@ type Browser struct {
 	InputBoxFocused bool
 	BlinkTimer      float32
 	RState          *RenderState
+
+	Zoom         float32
+	ScrollOffset float32
+	IsFullscreen bool
+
+	ContentHeight float32
+
+	HtmlRenderer *web.HTMLRenderer
+
+	WindowedX, WindowedY, WindowedWidth, WindowedHeight int
+	WasMaximizedBeforeFullscreen                        bool
+	IsMaximized                                         bool
 }
 
 func NewBrowser(Width int, Height int, WelcomeLink string, SUa string, IBoxHeight float32) *Browser {
 	return &Browser{
-		CurrentWidth:  Width,
-		CurrentHeight: Height,
-		Link:          WelcomeLink,
-		Ua:            SUa,
+		CurrentWidth:   Width,
+		CurrentHeight:  Height,
+		Link:           WelcomeLink,
+		Ua:             SUa,
+		InputBoxHeight: IBoxHeight,
 
 		// Initially const, then mut!!!
 		InputBoxFocused: false,
@@ -37,6 +52,10 @@ func NewBrowser(Width int, Height int, WelcomeLink string, SUa string, IBoxHeigh
 		RState:          &RenderState{NeedsRedraw: true},
 		InputText:       WelcomeLink,
 		CursorPosition:  len(WelcomeLink),
-		InputBoxHeight:  IBoxHeight,
+		IsMaximized:     false,
+		Zoom:            1.0,
+		ScrollOffset:    0.0,
+		ContentHeight:   0.0,
+		IsFullscreen:    false,
 	}
 }

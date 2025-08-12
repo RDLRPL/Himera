@@ -9,7 +9,7 @@ import (
 	"github.com/go-gl/gl/v4.1-core/gl"
 )
 
-func DrawInputBox(rectProgram uint32, textProgram uint32) {
+func DrawURLBox(rectProgram uint32, textProgram uint32) {
 	inputBoxWidth := float32(core.Browse.CurrentWidth)
 
 	drawer.DrawRect(rectProgram, 0, 0, inputBoxWidth, core.Browse.InputBoxHeight,
