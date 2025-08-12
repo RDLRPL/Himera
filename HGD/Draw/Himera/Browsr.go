@@ -14,9 +14,7 @@ func DrawInputBox(rectProgram uint32, textProgram uint32) {
 
 	drawer.DrawRect(rectProgram, 0, 0, inputBoxWidth, core.Browse.InputBoxHeight,
 		utils.RGBToFloat32(200, 200, 200))
-
-	borderColor := utils.RGBToFloat32(0, 0, 0)
-	drawRectOutline(rectProgram, 0, 0, inputBoxWidth, core.Browse.InputBoxHeight, 2.0, borderColor)
+	drawer.DrawRect(rectProgram, 0, 0+core.Browse.InputBoxHeight-2.0, inputBoxWidth, 2.0, utils.RGBToFloat32(0, 0, 0))
 
 	gl.UseProgram(textProgram)
 
@@ -39,8 +37,4 @@ func DrawInputBox(rectProgram uint32, textProgram uint32) {
 		TextLIB.DrawText(textProgram, "Url", 0, textY, 1.0,
 			utils.RGBToFloat32(150, 150, 150))
 	}
-}
-
-func drawRectOutline(program uint32, x, y, width, height, lineWidth float32, color [3]float32) {
-	drawer.DrawRect(program, x, y+height-lineWidth, width, lineWidth, color)
 }

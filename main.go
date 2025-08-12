@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"unicode"
 
 	web "github.com/RDLxxx/Himera/HDS/core/html"
 	h "github.com/RDLxxx/Himera/HDS/core/http"
@@ -20,19 +19,6 @@ import (
 	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
-type RenderState struct {
-	needsRedraw   bool
-	lastWidth     int
-	lastHeight    int
-	lastZoom      float32
-	lastScroll    float32
-	lastInputText string
-	lastFocused   bool
-	lastCursorPos int
-}
-
-var renderState = &RenderState{needsRedraw: true}
-
 var (
 	zoom         float32 = 1.0
 	scrollOffset float32 = 0.0
@@ -44,8 +30,6 @@ var (
 
 	windowedX, windowedY, windowedWidth, windowedHeight int
 	wasMaximizedBeforeFullscreen                        bool
-
-	inputBoxFocused bool = false
 )
 
 func init() {
@@ -53,36 +37,32 @@ func init() {
 }
 
 func checkNeedsRedraw() bool {
-	if renderState.needsRedraw ||
-		renderState.lastWidth != core.Browse.CurrentWidth ||
-		renderState.lastHeight != core.Browse.CurrentHeight ||
-		renderState.lastZoom != zoom ||
-		renderState.lastScroll != scrollOffset ||
-		renderState.lastInputText != core.Browse.InputText ||
-		renderState.lastFocused != inputBoxFocused ||
-		renderState.lastCursorPos != core.Browse.CursorPosition {
+	if core.Browse.RState.NeedsRedraw ||
+		core.Browse.RState.LastWidth != core.Browse.CurrentWidth ||
+		core.Browse.RState.LastHeight != core.Browse.CurrentHeight ||
+		core.Browse.RState.LastZoom != zoom ||
+		core.Browse.RState.LastScroll != scrollOffset ||
+		core.Browse.RState.LastInputText != core.Browse.InputText ||
+		core.Browse.RState.LastFocused != core.Browse.InputBoxFocused ||
+		core.Browse.RState.LastCursorPos != core.Browse.CursorPosition {
 
-		renderState.lastWidth = core.Browse.CurrentWidth
-		renderState.lastHeight = core.Browse.CurrentHeight
-		renderState.lastZoom = zoom
-		renderState.lastScroll = scrollOffset
-		renderState.lastInputText = core.Browse.InputText
-		renderState.lastFocused = inputBoxFocused
-		renderState.lastCursorPos = core.Browse.CursorPosition
-		renderState.needsRedraw = false
+		core.Browse.RState.LastWidth = core.Browse.CurrentWidth
+		core.Browse.RState.LastHeight = core.Browse.CurrentHeight
+		core.Browse.RState.LastZoom = zoom
+		core.Browse.RState.LastScroll = scrollOffset
+		core.Browse.RState.LastInputText = core.Browse.InputText
+		core.Browse.RState.LastFocused = core.Browse.InputBoxFocused
+		core.Browse.RState.LastCursorPos = core.Browse.CursorPosition
+		core.Browse.RState.NeedsRedraw = false
 
 		return true
 	}
 
-	if inputBoxFocused {
+	if core.Browse.InputBoxFocused {
 		return true
 	}
 
 	return false
-}
-
-func markNeedsRedraw() {
-	renderState.needsRedraw = true
 }
 
 func updateProjection(program uint32) {
@@ -134,13 +114,13 @@ func toggleFullscreen(window *glfw.Window) {
 		updateScrollLimits()
 	}
 
-	markNeedsRedraw()
+	himera.MarkNeedsRedraw()
 }
 
 func windowMaximizeCallback(window *glfw.Window, maximized bool) {
 	if !isFullscreen {
 		isMaximized = maximized
-		markNeedsRedraw()
+		himera.MarkNeedsRedraw()
 	}
 }
 
@@ -165,7 +145,7 @@ func adjustZoom(delta float32) {
 			contentHeight = htmlRenderer.CalculateContentHeight(ctx)
 		}
 
-		markNeedsRedraw()
+		himera.MarkNeedsRedraw()
 	}
 }
 
@@ -214,30 +194,22 @@ func framebufferSizeCallback(window *glfw.Window, width, height int) {
 		updateScrollLimits()
 	}
 
-	markNeedsRedraw()
-}
-
-func charCallback(window *glfw.Window, char rune) {
-	if inputBoxFocused && unicode.IsPrint(char) {
-		core.Browse.InputText = core.Browse.InputText[:core.Browse.CursorPosition] + string(char) + core.Browse.InputText[core.Browse.CursorPosition:]
-		core.Browse.CursorPosition++
-		markNeedsRedraw()
-	}
+	himera.MarkNeedsRedraw()
 }
 
 func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
 	if action == glfw.Press || action == glfw.Repeat {
 		needsRedraw := false
 
-		if inputBoxFocused {
+		if core.Browse.InputBoxFocused {
 			switch key {
 			case glfw.KeyEnter:
 				core.Browse.Link = core.Browse.InputText
 				updateContent(core.Browse.Link, core.Browse.Ua)
-				inputBoxFocused = false
+				core.Browse.InputBoxFocused = false
 				needsRedraw = true
 			case glfw.KeyEscape:
-				inputBoxFocused = false
+				core.Browse.InputBoxFocused = false
 				needsRedraw = true
 			case glfw.KeyBackspace:
 				if core.Browse.CursorPosition > 0 {
@@ -283,7 +255,7 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 			needsRedraw = true
 		case glfw.KeyL:
 			if mods&glfw.ModControl != 0 {
-				inputBoxFocused = true
+				core.Browse.InputBoxFocused = true
 				core.Browse.CursorPosition = len(core.Browse.InputText)
 				needsRedraw = true
 			}
@@ -313,7 +285,7 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 			}
 		}
 
-		if !inputBoxFocused {
+		if !core.Browse.InputBoxFocused {
 			switch key {
 			case glfw.KeyHome:
 				scrollOffset = 0
@@ -346,7 +318,7 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int, action glfw.Ac
 		}
 
 		if needsRedraw {
-			markNeedsRedraw()
+			himera.MarkNeedsRedraw()
 		}
 	}
 }
@@ -358,7 +330,7 @@ func mouseButtonCallback(window *glfw.Window, button glfw.MouseButton, action gl
 		inputBoxY := float32(5.0)
 		if float32(ypos) >= inputBoxY && float32(ypos) <= inputBoxY+core.Browse.InputBoxHeight &&
 			float32(xpos) >= 10.0 && float32(xpos) <= float32(core.Browse.CurrentWidth)-10.0 {
-			inputBoxFocused = true
+			core.Browse.InputBoxFocused = true
 			textWidth, _ := TextLIB.GetTextDimensions(core.Browse.InputText, 1.0)
 			relativeX := float32(xpos) - 15.0
 			if relativeX < 0 {
@@ -375,14 +347,14 @@ func mouseButtonCallback(window *glfw.Window, button glfw.MouseButton, action gl
 				}
 			}
 		} else {
-			inputBoxFocused = false
+			core.Browse.InputBoxFocused = false
 		}
-		markNeedsRedraw()
+		himera.MarkNeedsRedraw()
 	}
 }
 
 func scrollCallback(window *glfw.Window, xoff, yoff float64) {
-	if !inputBoxFocused {
+	if !core.Browse.InputBoxFocused {
 		if window.GetKey(glfw.KeyLeftControl) == glfw.Press ||
 			window.GetKey(glfw.KeyRightControl) == glfw.Press {
 			adjustZoom(float32(yoff) * 0.1)
@@ -390,7 +362,7 @@ func scrollCallback(window *glfw.Window, xoff, yoff float64) {
 			scrollOffset += float32(yoff) * 25.0
 			updateScrollLimits()
 		}
-		markNeedsRedraw()
+		himera.MarkNeedsRedraw()
 	}
 }
 
@@ -469,7 +441,7 @@ func main() {
 	window.SetMaximizeCallback(windowMaximizeCallback)
 	window.SetFramebufferSizeCallback(framebufferSizeCallback)
 	window.SetKeyCallback(keyCallback)
-	window.SetCharCallback(charCallback)
+	window.SetCharCallback(himera.CharCallback)
 	window.SetMouseButtonCallback(mouseButtonCallback)
 	window.SetScrollCallback(scrollCallback)
 
@@ -541,13 +513,13 @@ func main() {
 		glfw.WaitEventsTimeout(0.016)
 
 		if checkNeedsRedraw() {
-			if renderState.lastWidth != core.Browse.CurrentWidth ||
-				renderState.lastHeight != core.Browse.CurrentHeight ||
-				renderState.lastZoom != zoom {
+			if core.Browse.RState.LastWidth != core.Browse.CurrentWidth ||
+				core.Browse.RState.LastHeight != core.Browse.CurrentHeight ||
+				core.Browse.RState.LastZoom != zoom {
 				updateProjection(textPrg)
 			}
 
-			if inputBoxFocused {
+			if core.Browse.InputBoxFocused {
 				window.SetCursor(glfw.CreateStandardCursor(glfw.IBeamCursor))
 			} else {
 				window.SetCursor(glfw.CreateStandardCursor(glfw.ArrowCursor))
