@@ -1,106 +1,20 @@
-package web
+package html
 
 import (
 	"strings"
 	"unicode"
 
 	"github.com/RDLxxx/Himera/HGD/Draw/TextLIB"
-	"github.com/RDLxxx/Himera/HGD/utils"
 	"golang.org/x/net/html"
 )
-
-type RenderContext struct {
-	Program      uint32
-	X, Y         float32
-	Width        float32
-	Height       float32
-	ScrollOffset float32
-	Zoom         float32
-}
-
-type HTMLRenderer struct {
-	htmlContent string
-	cachedDoc   *html.Node
-	bodyNode    *html.Node
-	parsed      bool
-
-	styles *StyleConfig
-
-	textCache   map[*html.Node]string
-	layoutCache map[*html.Node]*LayoutInfo
-}
-
-type StyleConfig struct {
-	TextColor    [3]float32
-	LinkColor    [3]float32
-	HeadingColor [3]float32
-
-	H1Size    float32
-	H2Size    float32
-	H3Size    float32
-	H4Size    float32
-	H5Size    float32
-	H6Size    float32
-	BaseSize  float32
-	SmallSize float32
-
-	ParagraphSpacing float32
-	LineSpacing      float32
-	IndentSize       float32
-
-	H1MarginTop    float32
-	H1MarginBottom float32
-	H2MarginTop    float32
-	H2MarginBottom float32
-	H3MarginTop    float32
-	H3MarginBottom float32
-}
-
-type LayoutInfo struct {
-	X, Y          float32
-	Width, Height float32
-	LineHeight    float32
-}
 
 func NewHTMLRenderer(htmlContent string) *HTMLRenderer {
 	return &HTMLRenderer{
 		htmlContent: htmlContent,
 		textCache:   make(map[*html.Node]string),
 		layoutCache: make(map[*html.Node]*LayoutInfo),
-		styles:      getDefaultStyles(),
+		HTMLstyle:   HTMLcfgStyle,
 	}
-}
-
-func getDefaultStyles() *StyleConfig {
-	return &StyleConfig{
-		TextColor:    utils.RGBToFloat32(255, 255, 255),
-		LinkColor:    utils.RGBToFloat32(100, 149, 237),
-		HeadingColor: utils.RGBToFloat32(255, 255, 255),
-
-		H1Size:    2.0,
-		H2Size:    1.5,
-		H3Size:    1.17,
-		H4Size:    1.0,
-		H5Size:    0.83,
-		H6Size:    0.67,
-		BaseSize:  1.0,
-		SmallSize: 0.8,
-
-		ParagraphSpacing: 16.0,
-		LineSpacing:      1.4,
-		IndentSize:       20.0,
-
-		H1MarginTop:    24.0,
-		H1MarginBottom: 16.0,
-		H2MarginTop:    20.0,
-		H2MarginBottom: 12.0,
-		H3MarginTop:    16.0,
-		H3MarginBottom: 8.0,
-	}
-}
-
-func (r *HTMLRenderer) SetStyles(styles *StyleConfig) {
-	r.styles = styles
 }
 
 func (r *HTMLRenderer) ensureParsed() error {
@@ -153,7 +67,7 @@ func (r *HTMLRenderer) renderNode(ctx *RenderContext, node *html.Node, x, y floa
 		case html.TextNode:
 			text := cleanText(child.Data)
 			if text != "" && child.Parent != nil && !shouldSkipElement(child.Parent.Data) {
-				currentY = r.renderText(ctx, text, x, currentY, r.styles.BaseSize, r.styles.TextColor)
+				currentY = r.renderText(ctx, text, x, currentY, r.HTMLstyle.BaseSize, r.HTMLstyle.TextColor)
 			}
 		}
 	}
@@ -169,105 +83,105 @@ func (r *HTMLRenderer) renderElement(ctx *RenderContext, node *html.Node, x, y f
 	switch tag {
 	case "h1":
 		if content != "" {
-			y += r.styles.H1MarginTop * ctx.Zoom
-			y = r.renderText(ctx, content, x, y, r.styles.H1Size, r.styles.HeadingColor)
-			y += r.styles.H1MarginBottom * ctx.Zoom
+			y += r.HTMLstyle.H1MarginTop * ctx.Zoom
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.H1Size, r.HTMLstyle.HeadingColor)
+			y += r.HTMLstyle.H1MarginBottom * ctx.Zoom
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "h2":
 		if content != "" {
-			y += r.styles.H2MarginTop * ctx.Zoom
-			y = r.renderText(ctx, content, x, y, r.styles.H2Size, r.styles.HeadingColor)
-			y += r.styles.H2MarginBottom * ctx.Zoom
+			y += r.HTMLstyle.H2MarginTop * ctx.Zoom
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.H2Size, r.HTMLstyle.HeadingColor)
+			y += r.HTMLstyle.H2MarginBottom * ctx.Zoom
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "h3":
 		if content != "" {
-			y += r.styles.H3MarginTop * ctx.Zoom
-			y = r.renderText(ctx, content, x, y, r.styles.H3Size, r.styles.HeadingColor)
-			y += r.styles.H3MarginBottom * ctx.Zoom
+			y += r.HTMLstyle.H3MarginTop * ctx.Zoom
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.H3Size, r.HTMLstyle.HeadingColor)
+			y += r.HTMLstyle.H3MarginBottom * ctx.Zoom
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "h4":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.H4Size, r.styles.HeadingColor)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.H4Size, r.HTMLstyle.HeadingColor)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "h5":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.H5Size, r.styles.HeadingColor)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.H5Size, r.HTMLstyle.HeadingColor)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "h6":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.H6Size, r.styles.HeadingColor)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.H6Size, r.HTMLstyle.HeadingColor)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "p":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.TextColor)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.BaseSize, r.HTMLstyle.TextColor)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.renderNode(ctx, node, x, y)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		}
 
 	case "div":
 		y = r.renderNode(ctx, node, x, y)
-		y += (r.styles.ParagraphSpacing / 2) * ctx.Zoom
+		y += (r.HTMLstyle.ParagraphSpacing / 2) * ctx.Zoom
 
 	case "span":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.TextColor)
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.BaseSize, r.HTMLstyle.TextColor)
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "a":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.LinkColor)
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.BaseSize, r.HTMLstyle.LinkColor)
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "strong", "b":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.TextColor)
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.BaseSize, r.HTMLstyle.TextColor)
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "em", "i":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.TextColor)
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.BaseSize, r.HTMLstyle.TextColor)
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "small":
 		if content != "" {
-			y = r.renderText(ctx, content, x, y, r.styles.SmallSize, r.styles.TextColor)
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.SmallSize, r.HTMLstyle.TextColor)
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
 
 	case "br":
-		lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.styles.LineSpacing
+		lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.HTMLstyle.LineSpacing
 		y += lineHeight
 
 	case "hr":
@@ -280,12 +194,12 @@ func (r *HTMLRenderer) renderElement(ctx *RenderContext, node *html.Node, x, y f
 		y = r.renderListItem(ctx, node, x, y)
 
 	case "blockquote":
-		y = r.renderNode(ctx, node, x+r.styles.IndentSize*ctx.Zoom, y)
-		y += r.styles.ParagraphSpacing * ctx.Zoom
+		y = r.renderNode(ctx, node, x+r.HTMLstyle.IndentSize*ctx.Zoom, y)
+		y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 
 	default:
 		if content != "" && len(content) < 1000 {
-			y = r.renderText(ctx, content, x, y, r.styles.BaseSize, r.styles.TextColor)
+			y = r.renderText(ctx, content, x, y, r.HTMLstyle.BaseSize, r.HTMLstyle.TextColor)
 		} else {
 			y = r.renderNode(ctx, node, x, y)
 		}
@@ -301,7 +215,7 @@ func (r *HTMLRenderer) renderText(ctx *RenderContext, text string, x, y, scale f
 
 	effectiveScale := scale * ctx.Zoom
 	lines := r.wrapText(text, ctx.Width-x, effectiveScale)
-	lineHeight := float32(TextLIB.FontMetrics.Height>>6) * effectiveScale * r.styles.LineSpacing
+	lineHeight := float32(TextLIB.FontMetrics.Height>>6) * effectiveScale * r.HTMLstyle.LineSpacing
 
 	currentY := y
 	for _, line := range lines {
@@ -332,15 +246,15 @@ func (r *HTMLRenderer) renderList(ctx *RenderContext, node *html.Node, x, y floa
 				prefix = "  • "
 			}
 
-			currentY = r.renderText(ctx, prefix, x, currentY, r.styles.BaseSize, r.styles.TextColor)
+			currentY = r.renderText(ctx, prefix, x, currentY, r.HTMLstyle.BaseSize, r.HTMLstyle.TextColor)
 
-			itemY := currentY - float32(TextLIB.FontMetrics.Height>>6)*ctx.Zoom*r.styles.LineSpacing
+			itemY := currentY - float32(TextLIB.FontMetrics.Height>>6)*ctx.Zoom*r.HTMLstyle.LineSpacing
 			currentY = r.renderNode(ctx, child, x+30*ctx.Zoom, itemY)
 			currentY += 5 * ctx.Zoom
 		}
 	}
 
-	return currentY + r.styles.ParagraphSpacing*ctx.Zoom
+	return currentY + r.HTMLstyle.ParagraphSpacing*ctx.Zoom
 }
 
 func (r *HTMLRenderer) renderListItem(ctx *RenderContext, node *html.Node, x, y float32) float32 {
@@ -436,7 +350,7 @@ func (r *HTMLRenderer) calculateNodeHeight(ctx *RenderContext, node *html.Node, 
 			if text != "" && child.Parent != nil && !shouldSkipElement(child.Parent.Data) {
 				parentTag := strings.ToLower(child.Parent.Data)
 				if !r.isTextHandledByElement(parentTag) {
-					currentY = r.calculateTextHeight(ctx, text, x, currentY, r.styles.BaseSize)
+					currentY = r.calculateTextHeight(ctx, text, x, currentY, r.HTMLstyle.BaseSize)
 				}
 			}
 		}
@@ -452,105 +366,105 @@ func (r *HTMLRenderer) calculateElementHeight(ctx *RenderContext, node *html.Nod
 	switch tag {
 	case "h1":
 		if content != "" {
-			y += r.styles.H1MarginTop * ctx.Zoom
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H1Size)
-			y += r.styles.H1MarginBottom * ctx.Zoom
+			y += r.HTMLstyle.H1MarginTop * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.H1Size)
+			y += r.HTMLstyle.H1MarginBottom * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "h2":
 		if content != "" {
-			y += r.styles.H2MarginTop * ctx.Zoom
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H2Size)
-			y += r.styles.H2MarginBottom * ctx.Zoom
+			y += r.HTMLstyle.H2MarginTop * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.H2Size)
+			y += r.HTMLstyle.H2MarginBottom * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "h3":
 		if content != "" {
-			y += r.styles.H3MarginTop * ctx.Zoom
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H3Size)
-			y += r.styles.H3MarginBottom * ctx.Zoom
+			y += r.HTMLstyle.H3MarginTop * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.H3Size)
+			y += r.HTMLstyle.H3MarginBottom * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "h4":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H4Size)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.H4Size)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "h5":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H5Size)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.H5Size)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "h6":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.H6Size)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.H6Size)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "p":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.BaseSize)
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
-			y += r.styles.ParagraphSpacing * ctx.Zoom
+			y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 		}
 
 	case "div":
 		y = r.calculateNodeHeight(ctx, node, x, y)
-		y += (r.styles.ParagraphSpacing / 2) * ctx.Zoom
+		y += (r.HTMLstyle.ParagraphSpacing / 2) * ctx.Zoom
 
 	case "span":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.BaseSize)
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "a":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.BaseSize)
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "strong", "b":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.BaseSize)
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "em", "i":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.BaseSize)
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "small":
 		if content != "" {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.SmallSize)
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.SmallSize)
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
 
 	case "br":
-		lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.styles.LineSpacing
+		lineHeight := float32(TextLIB.FontMetrics.Height>>6) * ctx.Zoom * r.HTMLstyle.LineSpacing
 		y += lineHeight
 
 	case "hr":
@@ -563,12 +477,12 @@ func (r *HTMLRenderer) calculateElementHeight(ctx *RenderContext, node *html.Nod
 		y = r.calculateListItemHeight(ctx, node, x, y)
 
 	case "blockquote":
-		y = r.calculateNodeHeight(ctx, node, x+r.styles.IndentSize*ctx.Zoom, y)
-		y += r.styles.ParagraphSpacing * ctx.Zoom
+		y = r.calculateNodeHeight(ctx, node, x+r.HTMLstyle.IndentSize*ctx.Zoom, y)
+		y += r.HTMLstyle.ParagraphSpacing * ctx.Zoom
 
 	default:
 		if content != "" && len(content) < 1000 {
-			y = r.calculateTextHeight(ctx, content, x, y, r.styles.BaseSize)
+			y = r.calculateTextHeight(ctx, content, x, y, r.HTMLstyle.BaseSize)
 		} else {
 			y = r.calculateNodeHeight(ctx, node, x, y)
 		}
@@ -584,7 +498,7 @@ func (r *HTMLRenderer) calculateTextHeight(ctx *RenderContext, text string, x, y
 
 	effectiveScale := scale * ctx.Zoom
 	lines := r.wrapText(text, ctx.Width-x, effectiveScale)
-	lineHeight := float32(TextLIB.FontMetrics.Height>>6) * effectiveScale * r.styles.LineSpacing
+	lineHeight := float32(TextLIB.FontMetrics.Height>>6) * effectiveScale * r.HTMLstyle.LineSpacing
 
 	return y + float32(len(lines))*lineHeight
 }
@@ -603,15 +517,15 @@ func (r *HTMLRenderer) calculateListHeight(ctx *RenderContext, node *html.Node, 
 				prefix = "  • "
 			}
 
-			currentY = r.calculateTextHeight(ctx, prefix, x, currentY, r.styles.BaseSize)
+			currentY = r.calculateTextHeight(ctx, prefix, x, currentY, r.HTMLstyle.BaseSize)
 
-			itemY := currentY - float32(TextLIB.FontMetrics.Height>>6)*ctx.Zoom*r.styles.LineSpacing
+			itemY := currentY - float32(TextLIB.FontMetrics.Height>>6)*ctx.Zoom*r.HTMLstyle.LineSpacing
 			currentY = r.calculateNodeHeight(ctx, child, x+30*ctx.Zoom, itemY)
 			currentY += 5 * ctx.Zoom
 		}
 	}
 
-	return currentY + r.styles.ParagraphSpacing*ctx.Zoom
+	return currentY + r.HTMLstyle.ParagraphSpacing*ctx.Zoom
 }
 
 func (r *HTMLRenderer) calculateListItemHeight(ctx *RenderContext, node *html.Node, x, y float32) float32 {

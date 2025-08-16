@@ -20,7 +20,7 @@ func GETRequest(adress string, Ua string) (*Response, error) {
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", Ua) // "Himera/0.1B (Furry♥ X64; PurryForno_x86_64; x64; ver:=001B) HDS/001B Himera/0.1B"
+	req.Header.Set("User-Agent", Ua)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)

@@ -1,7 +1,7 @@
 package himera
 
 import (
-	web "github.com/RDLxxx/Himera/HDS/core/html"
+	web "github.com/RDLxxx/Himera/HDS/core/web/html"
 	"github.com/RDLxxx/Himera/HGD/core"
 
 	"github.com/go-gl/gl/v4.1-core/gl"

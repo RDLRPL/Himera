@@ -1,11 +1,10 @@
-package browser
+package html
 
 import (
-	web "github.com/RDLxxx/Himera/HDS/core/html"
 	"github.com/RDLxxx/Himera/HGD/utils"
 )
 
-var HTMLStyles = &web.StyleConfig{
+var HTMLcfgStyle = &HTMLConfig{
 	TextColor:    utils.RGBToFloat32(240, 240, 240),
 	LinkColor:    utils.RGBToFloat32(100, 149, 237),
 	HeadingColor: utils.RGBToFloat32(255, 255, 255),

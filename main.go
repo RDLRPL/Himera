@@ -10,7 +10,6 @@ import (
 	drawer "github.com/RDLxxx/Himera/HGD/Draw/Drawer"
 	himera "github.com/RDLxxx/Himera/HGD/Draw/Himera"
 	"github.com/RDLxxx/Himera/HGD/Draw/TextLIB"
-	"github.com/RDLxxx/Himera/HGD/browser"
 	"github.com/RDLxxx/Himera/HGD/core"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
@@ -86,9 +85,8 @@ func main() {
 	gl.ClearColor(0.1, 0.1, 0.1, 1.0)
 
 	himera.UpdateProjection(ProgramShaders.TextShaderProgram)
-	htmlRenderer := himera.UpdateContent(core.Browse.Link, core.Browse.Ua)
+	himera.UpdateContent(core.Browse.Link, core.Browse.Ua)
 
-	htmlRenderer.SetStyles(browser.HTMLStyles)
 	himera.UpdateScrollLimits()
 
 	glfw.SwapInterval(1)

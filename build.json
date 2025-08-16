@@ -1,5 +1,5 @@
 {
     "BuildType": "DEV",
     "Releases": ["Windows"],
-    "Param": "CLEAR"
+    "Param": "BUILD"
 }

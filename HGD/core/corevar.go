@@ -6,9 +6,10 @@ import (
 )
 
 var Monitor, _ = utils.GetPrimaryMonitor()
-var Browse = browser.NewBrowser(Monitor.Width,
+var Browse = browser.NewBrowser(
+	Monitor.Width,
 	Monitor.Height,
-	"https://google.com",
-	"(FurryPornox64 HimeraBrowsrx000)",
+	"https://polytech.alabuga.ru",
+	"browser from scratch btw",
 	40.0,
 )

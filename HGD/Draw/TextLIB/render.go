@@ -48,7 +48,7 @@ func DrawText(program uint32, text string, x, y float32, scale float32, color [3
 	for _, ch := range text {
 		char := Characters[ch]
 		if char == nil {
-			char = Characters[rune('?')]
+			char = Characters[0x00D8]
 			if char == nil {
 				continue
 			}

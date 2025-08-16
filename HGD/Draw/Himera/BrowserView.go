@@ -1,11 +1,14 @@
 package himera
 
 import (
-	web "github.com/RDLxxx/Himera/HDS/core/html"
+	"fmt"
+
 	h "github.com/RDLxxx/Himera/HDS/core/http"
+	web "github.com/RDLxxx/Himera/HDS/core/web/html"
 	"github.com/RDLxxx/Himera/HGD/Draw/TextLIB"
 	"github.com/RDLxxx/Himera/HGD/core"
 	"github.com/RDLxxx/Himera/HGD/utils"
+	"golang.org/x/net/html"
 )
 
 func RenderHTML(program uint32) {
@@ -49,6 +52,15 @@ func UpdateContent(link string, ua string) web.HTMLRenderer {
 		core.Browse.HtmlRenderer = web.NewHTMLRenderer(errorHTML)
 	} else {
 		core.Browse.HtmlRenderer = web.NewHTMLRenderer(req.Page)
+		doc := web.ParseHTML(req.Page)
+
+		fmt.Println("\n\n\n\n")
+		// fmt.Println(doc.FirstChild.Parent)
+		if doc.Type == html.ElementNode && doc.Data == "h1" {
+			if doc.FirstChild != nil {
+				fmt.Println(doc.FirstChild.Data)
+			}
+		}
 	}
 	return *core.Browse.HtmlRenderer
 }

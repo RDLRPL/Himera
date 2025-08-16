@@ -1,6 +1,6 @@
 package browser
 
-import web "github.com/RDLxxx/Himera/HDS/core/html"
+import web "github.com/RDLxxx/Himera/HDS/core/web/html"
 
 type RenderState struct {
 	NeedsRedraw   bool
